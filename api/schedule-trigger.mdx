@@ -1,0 +1,333 @@
+---
+title: "Schedule Trigger"
+description: "Execute code on a recurring schedule using cron expressions"
+---
+
+Schedule triggers fire at specified times using cron expressions, enabling periodic tasks like data synchronization, report generation, and cleanup operations.
+
+## Overview
+
+The `scheduleTrigger()` function creates time-based triggers that execute according to a cron schedule. You can optionally specify a timezone to ensure consistent execution across different regions.
+
+## Parameters
+
+<ParamField path="cron" type="string" required>
+  Standard cron expression (5-field format) that defines when the trigger fires.
+  
+  Format: `minute hour day-of-month month day-of-week`
+  
+  - `minute`: 0-59
+  - `hour`: 0-23
+  - `day-of-month`: 1-31
+  - `month`: 1-12
+  - `day-of-week`: 0-6 (0 = Sunday)
+</ParamField>
+
+<ParamField path="timezone" type="Timezone">
+  IANA timezone identifier (e.g., `"America/New_York"`, `"Asia/Tokyo"`). Defaults to `"UTC"` if not specified.
+</ParamField>
+
+## Basic Examples
+
+### Every 5 Minutes
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "frequent-sync",
+  description: "Sync data every 5 minutes",
+  trigger: scheduleTrigger({ cron: "*/5 * * * *" }),
+  operation: {
+    kind: "function",
+    body: async () => {
+      console.log("Running sync...");
+      // Sync logic here
+    },
+  },
+});
+```
+
+### Daily at Specific Time
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+import sampleWorkflow from "../workflows/sample";
+
+export default createExecutor({
+  name: "daily-workflow",
+  description: "Scheduled workflow executor",
+  trigger: scheduleTrigger({
+    cron: "0 12 * * *",        // Daily at 12:00 PM
+    timezone: "Asia/Tokyo",     // Japan Standard Time
+  }),
+  operation: {
+    kind: "workflow",
+    workflow: sampleWorkflow,
+    args: () => ({ orderId: "daily-workflow-order" }),
+  },
+});
+```
+
+### Weekly Report
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "weekly-report",
+  description: "Generate weekly report every Monday",
+  trigger: scheduleTrigger({
+    cron: "0 9 * * 1",           // Every Monday at 9:00 AM
+    timezone: "America/New_York",
+  }),
+  operation: {
+    kind: "function",
+    body: async () => {
+      // Generate and send weekly report
+    },
+  },
+});
+```
+
+### Monthly Cleanup
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "monthly-cleanup",
+  description: "Clean up old records on first day of month",
+  trigger: scheduleTrigger({ cron: "0 0 1 * *" }), // 1st of month at midnight UTC
+  operation: {
+    kind: "function",
+    body: async () => {
+      // Cleanup logic
+    },
+  },
+});
+```
+
+## Common Cron Patterns
+
+| Pattern | Description | Example |
+|---------|-------------|--------|
+| `*/5 * * * *` | Every 5 minutes | Data sync |
+| `0 * * * *` | Every hour | Hourly aggregation |
+| `0 9 * * *` | Daily at 9:00 AM | Morning reports |
+| `0 0 * * *` | Daily at midnight | Daily cleanup |
+| `0 9 * * 1` | Every Monday at 9:00 AM | Weekly reports |
+| `0 0 1 * *` | First day of month | Monthly billing |
+| `0 9 * * 1-5` | Weekdays at 9:00 AM | Business day tasks |
+| `0 0 1 1 *` | January 1st at midnight | Yearly archival |
+
+## Timezone Support
+
+Schedule triggers support IANA timezone identifiers for consistent execution across regions:
+
+```typescript
+scheduleTrigger({
+  cron: "0 9 * * *",
+  timezone: "America/Los_Angeles", // 9:00 AM Pacific Time
+});
+
+scheduleTrigger({
+  cron: "0 0 * * *",
+  timezone: "Europe/London", // Midnight GMT/BST
+});
+
+scheduleTrigger({
+  cron: "0 12 * * *",
+  timezone: "Asia/Tokyo", // Noon Japan Standard Time
+});
+```
+
+<Note>
+  Always specify a timezone if your schedule needs to align with local business hours or handle daylight saving time transitions correctly.
+</Note>
+
+## Event Context
+
+Schedule triggers receive minimal context in the operation function:
+
+```typescript
+interface ScheduleArgs {
+  env: TailorEnv;          // Environment information
+}
+```
+
+### Accessing Environment
+
+```typescript
+export default createExecutor({
+  name: "environment-aware-task",
+  trigger: scheduleTrigger({ cron: "0 * * * *" }),
+  operation: {
+    kind: "function",
+    body: async ({ env }) => {
+      console.log(`Running in environment:`, env);
+      // Use env to conditionally execute logic
+    },
+  },
+});
+```
+
+## Advanced Examples
+
+### Long-Running Reports with Job Function
+
+For tasks that may take longer than standard function timeouts, use the `jobFunction` operation:
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+import { getDB } from "../generated/tailordb";
+
+export default createExecutor({
+  name: "daily-report-generator",
+  description: "Generate comprehensive daily reports",
+  trigger: scheduleTrigger({ 
+    cron: "0 0 * * *",
+    timezone: "UTC",
+  }),
+  operation: {
+    kind: "jobFunction",
+    body: async () => {
+      const db = getDB("tailordb");
+      
+      // Long-running report generation
+      const orders = await db
+        .selectFrom("Order")
+        .selectAll()
+        .execute();
+      
+      // Process thousands of records
+      // Generate reports
+      // Send notifications
+    },
+  },
+});
+```
+
+### GraphQL Mutation with Authentication
+
+```typescript
+import { defineAuth, createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+const auth = defineAuth("my-auth", {
+  machineUsers: {
+    "batch-processor": {
+      attributes: { role: "ADMIN" },
+    },
+  },
+});
+
+export default createExecutor({
+  name: "scheduled-cleanup",
+  description: "Clean up old records with admin privileges",
+  trigger: scheduleTrigger({ cron: "0 0 * * *" }),
+  operation: {
+    kind: "graphql",
+    query: `mutation { cleanupOldRecords { count } }`,
+    authInvoker: auth.invoker("batch-processor"),
+  },
+});
+```
+
+### External API Integration
+
+```typescript
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "hourly-data-sync",
+  description: "Sync data from external API every hour",
+  trigger: scheduleTrigger({ cron: "0 * * * *" }),
+  operation: {
+    kind: "webhook",
+    url: "https://api.example.com/sync",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": { vault: "api-keys", key: "external-api" },
+    },
+    requestBody: () => ({
+      timestamp: new Date().toISOString(),
+      action: "sync",
+    }),
+  },
+});
+```
+
+## Best Practices
+
+### Choose Appropriate Intervals
+
+Balance between data freshness and system load:
+
+- **High frequency** (`*/5 * * * *`): Only for critical, time-sensitive operations
+- **Hourly** (`0 * * * *`): Good for regular data updates
+- **Daily** (`0 0 * * *`): Suitable for reports and cleanup tasks
+- **Weekly/Monthly**: For less time-sensitive aggregations
+
+### Use Job Functions for Long Operations
+
+If your scheduled task might take more than a few seconds:
+
+```typescript
+operation: {
+  kind: "jobFunction",  // Instead of "function"
+  body: async () => {
+    // Long-running operations
+  },
+}
+```
+
+### Handle Failures Gracefully
+
+```typescript
+body: async () => {
+  try {
+    // Your scheduled task
+  } catch (error) {
+    console.error("Scheduled task failed:", error);
+    // Log error, send alert, etc.
+  }
+}
+```
+
+### Be Timezone-Aware
+
+Always specify timezone for business-hour schedules:
+
+```typescript
+// Good: Explicit timezone
+scheduleTrigger({
+  cron: "0 9 * * 1-5",
+  timezone: "America/New_York",
+})
+
+// Avoid: Implicit UTC might not match business hours
+scheduleTrigger({ cron: "0 9 * * 1-5" })
+```
+
+<Note>
+  Schedule triggers are subject to platform execution limits. Very frequent schedules (e.g., every minute) should be used sparingly.
+</Note>
+
+## Supported Timezones
+
+Schedule triggers support all IANA timezone identifiers, including:
+
+- **Americas**: `America/New_York`, `America/Los_Angeles`, `America/Chicago`, `America/Sao_Paulo`
+- **Europe**: `Europe/London`, `Europe/Paris`, `Europe/Berlin`, `Europe/Moscow`
+- **Asia**: `Asia/Tokyo`, `Asia/Shanghai`, `Asia/Dubai`, `Asia/Singapore`
+- **Pacific**: `Pacific/Auckland`, `Australia/Sydney`, `Pacific/Fiji`
+- **UTC**: `UTC`
+
+See the full TypeScript type definition in `packages/sdk/src/configure/services/executor/trigger/schedule.ts:5` for the complete list.
+
+## Related
+
+- [Executor Overview](/api/create-executor)
+- [Record Triggers](/api/record-triggers)
+- [Job Function Operation](https://docs.tailor.tech/guides/executor/job-function-operation)
+- [Cron Expression Reference](https://crontab.guru/)

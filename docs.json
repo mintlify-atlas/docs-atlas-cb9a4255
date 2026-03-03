@@ -1,122 +1,157 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Tailor Platform SDK",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#3B82F6",
+    "light": "#60A5FA",
+    "dark": "#2563EB"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/tailor-platform/sdk"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/tailor-platform/sdk"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/configuration",
+              "concepts/type-safety",
+              "concepts/deployment"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Services",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "services/tailordb",
+              "services/resolver",
+              "services/executor",
+              "services/workflow",
+              "services/auth",
+              "services/idp",
+              "services/static-website",
+              "services/secret-manager"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/testing",
+              "guides/generators",
+              "guides/plugins",
+              "guides/migrations"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "CLI Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "cli/overview",
+              "cli/authentication"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Application Commands",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "cli/init",
+              "cli/generate",
+              "cli/apply",
+              "cli/remove",
+              "cli/show"
+            ]
+          },
+          {
+            "group": "TailorDB Commands",
+            "pages": [
+              "cli/tailordb-truncate",
+              "cli/tailordb-migration",
+              "cli/tailordb-erd"
+            ]
+          },
+          {
+            "group": "Service Management",
+            "pages": [
+              "cli/executor",
+              "cli/workflow",
+              "cli/secret",
+              "cli/static-website",
+              "cli/user"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Configuration API",
+            "pages": [
+              "api/define-config",
+              "api/define-auth",
+              "api/define-idp",
+              "api/define-static-website",
+              "api/define-generators",
+              "api/define-plugins"
+            ]
+          },
+          {
+            "group": "Database API",
+            "pages": [
+              "api/db-type",
+              "api/db-fields",
+              "api/db-relations",
+              "api/db-permissions"
+            ]
+          },
+          {
+            "group": "Service Creation",
+            "pages": [
+              "api/create-resolver",
+              "api/create-executor",
+              "api/create-workflow"
+            ]
+          },
+          {
+            "group": "Type System",
+            "pages": [
+              "api/type-builders",
+              "api/type-inference"
+            ]
+          },
+          {
+            "group": "Triggers",
+            "pages": [
+              "api/record-triggers",
+              "api/schedule-trigger",
+              "api/webhook-trigger",
+              "api/resolver-trigger"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

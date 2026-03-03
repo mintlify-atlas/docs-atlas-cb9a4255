@@ -1,0 +1,137 @@
+---
+title: "defineStaticWebSite"
+description: "Define a static website configuration for Tailor Platform SDK"
+---
+
+## Function Signature
+
+```typescript
+function defineStaticWebSite(
+  name: string,
+  config: Omit<StaticWebsiteInput, "name">
+): StaticWebsiteConfig & { readonly url: string }
+```
+
+Defines a static website configuration with a placeholder URL that is resolved at deployment time.
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  Static website name
+</ParamField>
+
+<ParamField path="config" type="StaticWebsiteInput" required>
+  Static website configuration object
+  
+  <ParamField path="description" type="string">
+    Description of the static website
+  </ParamField>
+  
+  <ParamField path="allowedIpAddresses" type="string[]">
+    IP addresses allowed to access the static website
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="website" type="StaticWebsiteConfig">
+  Defined static website configuration with the following properties:
+  
+  <ResponseField name="name" type="string">
+    Static website name
+  </ResponseField>
+  
+  <ResponseField name="description" type="string">
+    Website description (if provided)
+  </ResponseField>
+  
+  <ResponseField name="allowedIpAddresses" type="string[]">
+    Allowed IP addresses (if provided)
+  </ResponseField>
+  
+  <ResponseField name="url" type="string">
+    Placeholder URL in the format `"{name}:url"`. This is replaced with the actual deployed URL by the Tailor Platform at deployment time
+  </ResponseField>
+</ResponseField>
+
+## Example
+
+### Basic Configuration
+
+```typescript
+import { defineStaticWebSite } from "@tailor-platform/sdk";
+
+const website = defineStaticWebSite("my-frontend", {
+  description: "my frontend application",
+});
+
+const erdSite = defineStaticWebSite("my-erd-site", {
+  description: "ERD site for TailorDB",
+});
+```
+
+### With IP Restrictions
+
+```typescript
+const website = defineStaticWebSite("my-frontend", {
+  description: "Internal admin dashboard",
+  allowedIpAddresses: ["192.168.1.0/24", "10.0.0.1"],
+});
+```
+
+### Using the URL Property
+
+```typescript
+import {
+  defineAuth,
+  defineConfig,
+  defineIdp,
+  defineStaticWebSite,
+} from "@tailor-platform/sdk";
+
+const website = defineStaticWebSite("my-frontend", {
+  description: "my frontend application",
+});
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+  },
+  oauth2Clients: {
+    sample: {
+      // Use website.url in redirect URIs
+      redirectURIs: ["https://example.com/callback", `${website.url}/callback`],
+      description: "Sample OAuth2 client",
+      grantTypes: ["authorization_code", "refresh_token"],
+    },
+  },
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+
+export default defineConfig({
+  name: "my-app",
+  cors: [
+    website.url, // URL is replaced with actual deployment URL
+  ],
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+    },
+  },
+  staticWebsites: [website],
+});
+```
+
+## Notes
+
+- The `.url` property returns a placeholder string in the format `"{name}:url"` during configuration
+- At deployment time, the Tailor Platform replaces this placeholder with the actual deployed URL
+- This allows you to reference the website URL in CORS settings, OAuth redirect URIs, and other configuration fields before the actual URL is known
+- The static website must be included in the `staticWebsites` array in `defineConfig` for deployment
+- Use the website name in the `erdSite` field of TailorDB configuration to associate an ERD visualization site

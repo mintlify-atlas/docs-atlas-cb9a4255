@@ -1,0 +1,144 @@
+---
+title: Tailor Platform SDK
+description: Build type-safe, enterprise-grade applications with TypeScript configuration and full end-to-end type safety
+---
+
+## Build applications on Tailor Platform with TypeScript
+
+Tailor Platform SDK is a TypeScript SDK for building backend applications on the [Tailor Platform](https://www.tailor.tech/). Write your entire backend configuration in TypeScript with full type safety and deploy to production with a single command.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with a working example in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install the SDK and set up your development environment
+  </Card>
+  <Card title="TailorDB" icon="database" href="/services/tailordb">
+    Define type-safe database schemas
+  </Card>
+  <Card title="Resolvers" icon="code" href="/services/resolver">
+    Create custom GraphQL resolvers with business logic
+  </Card>
+  <Card title="Executors" icon="bolt" href="/services/executor">
+    Build event-driven handlers for automation
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/services/workflow">
+    Orchestrate complex multi-step operations
+  </Card>
+</CardGroup>
+
+## Key features
+
+The Tailor Platform SDK provides everything you need to build enterprise applications:
+
+<CardGroup cols={2}>
+  <Card title="Type-safe database schemas" icon="shield-check">
+    Define your database schema in TypeScript with automatic type generation and validation
+  </Card>
+  <Card title="Custom GraphQL resolvers" icon="code-branch">
+    Create business logic with full type safety and automatic GraphQL schema generation
+  </Card>
+  <Card title="Event-driven executors" icon="bolt">
+    React to database changes, webhooks, schedules, and authentication events
+  </Card>
+  <Card title="Multi-step workflows" icon="diagram-next">
+    Orchestrate complex operations with job chaining and parallel execution
+  </Card>
+  <Card title="Authentication & authorization" icon="lock">
+    Built-in auth service with OAuth2, machine users, and role-based access control
+  </Card>
+  <Card title="Identity provider" icon="user-shield">
+    Integrated IdP with customizable password policies and user management
+  </Card>
+  <Card title="Static website hosting" icon="globe">
+    Deploy frontend applications with automatic URL resolution in CORS settings
+  </Card>
+  <Card title="Secret management" icon="key">
+    Secure credential storage for API keys and sensitive configuration
+  </Card>
+</CardGroup>
+
+## What makes this SDK unique
+
+### TypeScript configuration
+
+Unlike traditional backend platforms that use YAML or JSON, the Tailor Platform SDK uses TypeScript for all configuration. This provides:
+
+- Full IntelliSense and autocomplete in your editor
+- Compile-time type checking for your entire configuration
+- Ability to share and reuse code across services
+- Type-safe environment variables and dependencies
+
+```typescript
+import { defineConfig, defineAuth } from "@tailor-platform/sdk";
+import { user } from "./tailordb/user";
+
+export default defineConfig({
+  name: "my-app",
+  db: { "main-db": { files: ["./db/*.ts"] } },
+  resolver: { "main-resolver": { files: ["./resolvers/**/*.ts"] } },
+  auth: defineAuth("my-auth", {
+    userProfile: {
+      type: user,
+      usernameField: "email",
+      attributes: { role: true },
+    },
+  }),
+});
+```
+
+### End-to-end type safety
+
+From database schema to resolver outputs, the SDK ensures type safety across your entire application:
+
+```typescript
+// Define a type-safe database model
+export const user = db
+  .type("User", {
+    name: db.string(),
+    email: db.string().unique(),
+    role: db.enum(["MANAGER", "STAFF"]),
+    ...db.fields.timestamps(),
+  })
+  .permission(defaultPermission)
+  .gqlPermission(defaultGqlPermission);
+
+// Use it in a type-safe resolver
+export default createResolver({
+  name: "hello",
+  operation: "query",
+  input: {
+    name: t.string().description("Name to greet"),
+  },
+  body: (context) => {
+    return {
+      message: `Hello, ${context.input.name}!`,
+    };
+  },
+  output: t.object({
+    message: t.string().description("Greeting message"),
+  }),
+});
+```
+
+### Built for enterprise
+
+The SDK includes enterprise-ready features out of the box:
+
+- **Role-based permissions** on every database type and GraphQL operation
+- **Machine users** for API-to-API communication
+- **IP allowlisting** for network security
+- **Database migrations** with automatic execution on deployment
+- **Code generation plugins** for Kysely types, enum constants, and seed data
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Get started with the quickstart" icon="play" href="/quickstart">
+    Create your first application in under 5 minutes
+  </Card>
+  <Card title="Explore the templates" icon="folder-open" href="https://github.com/tailor-platform/sdk/tree/main/packages/create-sdk#available-templates">
+    Browse example projects including inventory management and testing patterns
+  </Card>
+</CardGroup>

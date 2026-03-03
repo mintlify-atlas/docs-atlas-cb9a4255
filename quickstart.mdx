@@ -1,80 +1,304 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Create and deploy your first Tailor Platform application in under 5 minutes
 ---
 
-## Get started in three steps
+## Get started in minutes
 
-Get your documentation site running locally and make your first customization.
+This quickstart will guide you through creating, deploying, and querying your first Tailor Platform application. You'll have a working GraphQL API running in the cloud in under 5 minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Install Node.js">
+    The SDK requires **Node.js 22 or later**. Install Node.js via your package manager by following the [official Node.js instructions](https://nodejs.org/).
 
-### Step 2: Deploy your changes
+    Verify your installation:
+    ```bash
+    node --version
+    # Should output v22.0.0 or higher
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Get a Tailor Platform account">
+    You'll need a Tailor Platform account to deploy your application. [Request access here](https://www.tailor.tech/demo) to get started.
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Create your first application
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Create a new project">
+    Use the create command to scaffold a new project with the `hello-world` template:
 
-### Step 3: Go live
+    <CodeGroup>
+    ```bash npm
+    npm create @tailor-platform/sdk -- --template hello-world my-app
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash yarn
+    yarn create @tailor-platform/sdk --template hello-world my-app
+    ```
+
+    ```bash pnpm
+    pnpm create @tailor-platform/sdk --template hello-world my-app
+    ```
+    </CodeGroup>
+
+    This creates a new directory called `my-app` with:
+    - A simple "hello" query resolver
+    - TypeScript configuration
+    - Database schema with a User type
+    - All necessary dependencies
+  </Step>
+
+  <Step title="Navigate to your project">
+    ```bash
+    cd my-app
+    ```
+  </Step>
+
+  <Step title="Login to Tailor Platform">
+    Authenticate with the Tailor Platform:
+
+    ```bash
+    npx tailor-sdk login
+    ```
+
+    This will open your browser to complete the authentication flow.
+  </Step>
+
+  <Step title="Create a workspace">
+    Every application needs a workspace. Create one with the following command:
+
+    ```bash
+    npx tailor-sdk workspace create --name my-workspace --region us-east-1
+    ```
+
+    <Note>
+      Available regions: `us-east-1`, `eu-west-1`, `ap-northeast-1`
+    </Note>
+
+    List your workspaces to get the workspace ID:
+
+    ```bash
+    npx tailor-sdk workspace list
+    ```
+
+    Alternatively, create a workspace using the [Tailor Platform Console](https://console.tailor.tech/).
+  </Step>
+
+  <Step title="Deploy your application">
+    Deploy your application to your workspace:
+
+    <CodeGroup>
+    ```bash npm
+    npm run deploy -- --workspace-id <your-workspace-id>
+    ```
+
+    ```bash yarn
+    yarn deploy --workspace-id <your-workspace-id>
+    ```
+
+    ```bash pnpm
+    pnpm deploy --workspace-id <your-workspace-id>
+    ```
+    </CodeGroup>
+
+    <Tip>
+      Save your workspace ID in an `.env` file:
+      ```bash
+      TAILOR_PLATFORM_WORKSPACE_ID=your-workspace-id
+      ```
+      Then you can run `npm run deploy` without the `--workspace-id` flag.
+    </Tip>
+
+    The deployment process will:
+    - Build your TypeScript configuration
+    - Generate type definitions
+    - Deploy your database schema
+    - Deploy your resolver
+    - Output a GraphQL endpoint URL
+  </Step>
+</Steps>
+
+## Query your API
+
+<Steps>
+  <Step title="Open GraphQL Playground">
+    After deployment, you'll receive a GraphQL endpoint URL. Open the GraphQL Playground in your browser.
+  </Step>
+
+  <Step title="Execute your first query">
+    Run the `hello` query with a name parameter:
+
+    ```graphql
+    query {
+      hello(name: "sdk") {
+        message
+      }
+    }
+    ```
+
+    You should see the response:
+
+    ```json
+    {
+      "data": {
+        "hello": {
+          "message": "Hello, sdk!"
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Understanding the code
+
+Let's look at what you just deployed. The hello-world template includes:
+
+### Configuration file
+
+The `tailor.config.ts` file defines your application:
+
+```typescript tailor.config.ts
+import { defineConfig, definePlugins } from "@tailor-platform/sdk";
+import { kyselyTypePlugin } from "@tailor-platform/sdk/plugin/kysely-type";
+
+export default defineConfig({
+  name: "hello-world",
+  db: { "main-db": { files: [`./src/db/*.ts`] } },
+  resolver: { "main-resolver": { files: [`./src/resolvers/**/*.ts`] } },
+});
+
+export const plugins = definePlugins(
+  kyselyTypePlugin({ distPath: `./src/generated/kysely-tailordb.ts` }),
+);
+```
+
+### Database schema
+
+The `src/db/user.ts` file defines a User type:
+
+```typescript src/db/user.ts
+import {
+  db,
+  unsafeAllowAllGqlPermission,
+  unsafeAllowAllTypePermission,
+} from "@tailor-platform/sdk";
+
+export const user = db
+  .type("User", {
+    name: db.string().description("Name of the user"),
+    email: db.string().unique().description("Email address of the user"),
+    role: db.enum(["MANAGER", "STAFF"]),
+    ...db.fields.timestamps(),
+  })
+  .features({
+    gqlOperations: "query",
+  })
+  .permission(unsafeAllowAllTypePermission)
+  .gqlPermission(unsafeAllowAllGqlPermission);
+```
+
+### Resolver
+
+The `src/resolvers/hello.ts` file defines a custom GraphQL query:
+
+```typescript src/resolvers/hello.ts
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "hello",
+  operation: "query",
+  input: {
+    name: t.string().description("Name to greet"),
+  },
+  body: (context) => {
+    return {
+      message: `Hello, ${context.input.name}!`,
+    };
+  },
+  output: t
+    .object({
+      message: t.string().description("Greeting message"),
+    })
+    .description("Greeting response"),
+});
+```
+
+## Make your first change
+
+<Steps>
+  <Step title="Edit the resolver">
+    Open `src/resolvers/hello.ts` and change the message:
+
+    ```typescript src/resolvers/hello.ts
+    export default createResolver({
+      name: "hello",
+      operation: "query",
+      input: {
+        name: t.string().description("Name to greet"),
+      },
+      body: (context) => {
+        return {
+          message: `Welcome to Tailor Platform, ${context.input.name}!`,
+        };
+      },
+      output: t
+        .object({
+          message: t.string().description("Greeting message"),
+        })
+        .description("Greeting response"),
+    });
+    ```
+  </Step>
+
+  <Step title="Deploy your changes">
+    ```bash
+    npm run deploy
+    ```
+  </Step>
+
+  <Step title="Test the updated query">
+    Run the same GraphQL query and see the updated response:
+
+    ```graphql
+    query {
+      hello(name: "sdk") {
+        message
+      }
+    }
+    ```
+
+    ```json
+    {
+      "data": {
+        "hello": {
+          "message": "Welcome to Tailor Platform, sdk!"
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Congratulations! You've created, deployed, and modified your first Tailor Platform application.
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Learn about TailorDB" icon="database" href="/services/tailordb">
+    Define complex database schemas with relationships and permissions
+  </Card>
+  <Card title="Create custom resolvers" icon="code" href="/services/resolver">
+    Build GraphQL resolvers with business logic and database access
+  </Card>
+  <Card title="Set up executors" icon="bolt" href="/services/executor">
+    React to events like database changes and webhooks
+  </Card>
+  <Card title="Explore templates" icon="folder-open" href="https://github.com/tailor-platform/sdk/tree/main/packages/create-sdk#available-templates">
+    Check out the inventory-management and testing templates for more examples
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,245 @@
+---
+title: remove
+description: Remove all resources managed by your Tailor Platform application from a workspace
+---
+
+Remove all resources managed by your application from a workspace. This command deletes all deployed services, resources, and data associated with your application.
+
+## Command Syntax
+
+```bash
+tailor-sdk remove [options]
+```
+
+## Options
+
+<ParamField path="--workspace-id" type="string">
+  Workspace ID to remove resources from. Can also be set via `TAILOR_PLATFORM_WORKSPACE_ID` environment variable or workspace profile.
+  
+  **Alias:** `-w`
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  Workspace profile name. Profiles store workspace ID and authentication token for easy switching between environments.
+  
+  **Alias:** `-p`
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file.
+  
+  **Alias:** `-c`
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompts and remove resources automatically.
+  
+  **Alias:** `-y`
+</ParamField>
+
+### Common Options
+
+The following common options are also available:
+
+- `--env-file` / `-e` - Path to environment file (error if not found)
+- `--env-file-if-exists` - Path to environment file (ignored if not found)
+- `--verbose` - Enable verbose logging (show stack traces on error)
+
+## Usage Examples
+
+### Remove with Confirmation
+
+```bash
+tailor-sdk remove --workspace-id ws_1234567890
+```
+
+Prompts for confirmation before removing resources.
+
+### Remove with Profile
+
+```bash
+tailor-sdk remove --profile development
+```
+
+Uses the "development" profile to identify the workspace.
+
+### Remove without Confirmation
+
+```bash
+tailor-sdk remove -w ws_1234567890 --yes
+```
+
+Skips confirmation prompt. Use with caution!
+
+```bash
+tailor-sdk remove --profile staging -y
+```
+
+Removes all resources from the staging workspace without confirmation.
+
+## What Gets Removed
+
+The `remove` command deletes resources in reverse dependency order:
+
+1. **Workflows** - All workflow definitions and executions
+2. **Executors** - All executor definitions and jobs
+3. **Static Websites** - All deployed static sites
+4. **Application** - The main application resource
+5. **Resolvers** - All resolver resources and services
+6. **Auth Resources** - OAuth2 clients, machine users
+7. **Auth Services** - Auth service instances
+8. **IdP Resources** - Identity provider resources
+9. **IdP Services** - Identity provider services
+10. **TailorDB Resources** - Types and data
+11. **TailorDB Services** - Database service instances
+12. **Function Registry** - Function entries
+
+<Warning>
+This operation is destructive and **cannot be undone**. All data in TailorDB tables will be permanently deleted.
+</Warning>
+
+## Removal Process
+
+### Step 1: Plan
+
+The command first plans the removal by:
+- Loading your configuration
+- Querying deployed resources
+- Building a deletion plan with all resources to remove
+
+### Step 2: Confirm
+
+Unless `--yes` is specified, you'll be prompted:
+
+```bash
+? Are you sure you want to remove all resources? (y/N)
+```
+
+- Select `y` to proceed with removal
+- Select `N` or press Enter to cancel
+
+### Step 3: Execute
+
+Resources are deleted in reverse dependency order to maintain referential integrity.
+
+## Safety Features
+
+### No Resources Check
+
+If no resources are found to delete, the command exits without prompting:
+
+```bash
+$ tailor-sdk remove -w ws_1234567890
+Planning removal of resources managed by "my-app"...
+
+No resources found to remove.
+```
+
+### Confirmation Required
+
+By default, confirmation is required before deletion:
+
+```bash
+Planning removal of resources managed by "my-app"...
+
+Resources to remove:
+  - Workflow: processOrder
+  - Executor: sendEmail
+  - TailorDB type: User
+  - TailorDB type: Order
+  - Application: my-app
+
+? Are you sure you want to remove all resources? (y/N)
+```
+
+### Application Name Matching
+
+Only resources owned by the application specified in your config are removed. Resources owned by other applications are left untouched.
+
+<Note>
+The `remove` command uses application name from your `tailor.config.ts` to identify which resources to delete. Resources must have matching ownership labels.
+</Note>
+
+## Authentication
+
+Authentication token priority:
+
+1. `TAILOR_PLATFORM_TOKEN` environment variable
+2. `TAILOR_TOKEN` environment variable (deprecated)
+3. Profile specified via `--profile` or `TAILOR_PLATFORM_PROFILE`
+4. Current user from platform config (`~/.config/tailor-platform/config.yaml`)
+
+## Workspace ID Resolution
+
+Workspace ID priority:
+
+1. `--workspace-id` command option
+2. `TAILOR_PLATFORM_WORKSPACE_ID` environment variable
+3. Profile specified via `--profile` or `TAILOR_PLATFORM_PROFILE`
+
+## Common Use Cases
+
+### Clean Development Environment
+
+```bash
+tailor-sdk remove --profile dev --yes
+```
+
+Quickly clean your development workspace for fresh deployments.
+
+### Remove Staging Deployment
+
+```bash
+tailor-sdk remove --profile staging
+```
+
+Carefully remove staging deployment with confirmation.
+
+### Remove with Environment File
+
+```bash
+tailor-sdk remove --env-file .env.dev --workspace-id ws_dev123
+```
+
+Load environment variables before removal.
+
+## Output Example
+
+```bash
+$ tailor-sdk remove -w ws_1234567890
+
+Planning removal of resources managed by "my-app"...
+
+Resources to remove:
+  - Workflow: processOrder
+  - Executor: sendEmail  
+  - TailorDB type: User
+  - Application: my-app
+
+? Are you sure you want to remove all resources? (y/N) y
+
+Removing all resources...
+✓ Deleted Workflow: processOrder
+✓ Deleted Executor: sendEmail
+✓ Deleted TailorDB type: User
+✓ Deleted Application: my-app
+
+✓ Successfully removed all resources managed by "my-app".
+```
+
+## Error Handling
+
+If removal is cancelled:
+
+```bash
+? Are you sure you want to remove all resources? (y/N) N
+
+Error: Remove cancelled. No resources were deleted.
+To override, run again and confirm, or use --yes flag.
+```
+
+## Related Commands
+
+- [`apply`](/cli/apply) - Deploy application to workspace
+- [`show`](/cli/show) - Show deployed application info
+- [`tailordb truncate`](/cli/tailordb-truncate) - Truncate tables without removing types

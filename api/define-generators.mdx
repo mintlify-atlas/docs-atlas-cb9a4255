@@ -1,0 +1,150 @@
+---
+title: "defineGenerators"
+description: "Define code generators for Tailor Platform SDK (deprecated)"
+---
+
+<Warning>
+  This function is deprecated. Use `definePlugins()` with generation hooks (`onTypeLoaded`, `generate`, etc.) instead.
+</Warning>
+
+## Function Signature
+
+```typescript
+function defineGenerators(...configs: GeneratorConfig[]): GeneratorConfig[]
+```
+
+Defines generators to be used with the Tailor SDK. This function is deprecated in favor of the more powerful plugin system.
+
+## Parameters
+
+<ParamField path="...configs" type="GeneratorConfig[]" required>
+  Variable number of generator configurations. Each configuration is a tuple of `[generatorName, options]`
+  
+  <ParamField path="[0]" type="string" required>
+    Generator package name. Built-in generators:
+    - `"@tailor-platform/kysely-type"`: Generate Kysely types for TailorDB
+    - `"@tailor-platform/seed"`: Generate seed data utilities
+    - `"@tailor-platform/enum-constants"`: Generate enum constants
+    - `"@tailor-platform/file-utils"`: Generate file utility functions
+  </ParamField>
+  
+  <ParamField path="[1]" type="object" required>
+    Generator-specific options
+    
+    <ParamField path="distPath" type="string" required>
+      Output path for generated files (relative to project root)
+    </ParamField>
+    
+    <ParamField path="machineUserName" type="string">
+      Machine user name for seed generator (only for `@tailor-platform/seed`)
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="configs" type="GeneratorConfig[]">
+  The same generator configurations array passed as input
+</ResponseField>
+
+## Migration to Plugins
+
+The `defineGenerators()` function has been deprecated in favor of `definePlugins()`, which provides more flexibility and power. Here's how to migrate:
+
+<Tabs>
+  <Tab title="Old (Deprecated)">
+    ```typescript
+    import { defineGenerators } from "@tailor-platform/sdk";
+    
+    export const generators = defineGenerators(
+      ["@tailor-platform/kysely-type", { distPath: "./generated/tailordb.ts" }],
+      ["@tailor-platform/enum-constants", { distPath: "./generated/enums.ts" }],
+      ["@tailor-platform/file-utils", { distPath: "./generated/files.ts" }],
+      ["@tailor-platform/seed", { distPath: "./seed", machineUserName: "manager-machine-user" }],
+    );
+    ```
+  </Tab>
+  
+  <Tab title="New (Recommended)">
+    ```typescript
+    import { definePlugins } from "@tailor-platform/sdk";
+    import { kyselyTypePlugin } from "@tailor-platform/sdk/plugin/kysely-type";
+    import { enumConstantsPlugin } from "@tailor-platform/sdk/plugin/enum-constants";
+    import { fileUtilsPlugin } from "@tailor-platform/sdk/plugin/file-utils";
+    import { seedPlugin } from "@tailor-platform/sdk/plugin/seed";
+    
+    export const plugins = definePlugins(
+      kyselyTypePlugin({ distPath: "./generated/tailordb.ts" }),
+      enumConstantsPlugin({ distPath: "./generated/enums.ts" }),
+      fileUtilsPlugin({ distPath: "./generated/files.ts" }),
+      seedPlugin({ distPath: "./seed", machineUserName: "manager-machine-user" }),
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Example (Deprecated)
+
+```typescript
+import { defineGenerators } from "@tailor-platform/sdk";
+
+export const generators = defineGenerators(
+  ["@tailor-platform/kysely-type", { distPath: "./generated/tailordb.ts" }],
+  ["@tailor-platform/enum-constants", { distPath: "./generated/enums.ts" }],
+  ["@tailor-platform/file-utils", { distPath: "./generated/files.ts" }],
+  ["@tailor-platform/seed", { distPath: "./seed", machineUserName: "manager-machine-user" }],
+);
+```
+
+## Built-in Generators
+
+### Kysely Type Generator
+
+Generates TypeScript types for TailorDB schemas using Kysely.
+
+```typescript
+["@tailor-platform/kysely-type", { distPath: "./generated/tailordb.ts" }]
+```
+
+**Requirements:**
+- Install `@tailor-platform/kysely-type` as a dependency
+- Required for using `getDB()` in resolvers, executors, and workflows
+
+### Seed Generator
+
+Generates utilities for seeding data into TailorDB.
+
+```typescript
+["@tailor-platform/seed", { 
+  distPath: "./seed", 
+  machineUserName: "manager-machine-user" 
+}]
+```
+
+**Requirements:**
+- Install `@tailor-platform/function-types` as a devDependency
+
+### Enum Constants Generator
+
+Generates TypeScript constants for enum values defined in TailorDB schemas.
+
+```typescript
+["@tailor-platform/enum-constants", { distPath: "./generated/enums.ts" }]
+```
+
+### File Utils Generator
+
+Generates utility functions for file operations.
+
+```typescript
+["@tailor-platform/file-utils", { distPath: "./generated/files.ts" }]
+```
+
+## Notes
+
+- **This function is deprecated** and will be removed in a future version
+- Use `definePlugins()` instead for new projects
+- Generators are passed as tuples (rest arguments), not as an array
+- The generated files are created during the build process
+- Generators depend on your TailorDB schema definitions
+- See the [definePlugins](/api/define-plugins) documentation for the recommended approach

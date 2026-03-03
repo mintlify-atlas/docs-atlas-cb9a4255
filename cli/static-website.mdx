@@ -1,0 +1,155 @@
+---
+title: Static Website Commands
+description: Manage and deploy static websites in your workspace
+---
+
+Commands for managing and deploying static websites.
+
+## staticwebsite
+
+Manage static websites in your workspace.
+
+**Usage**
+
+```bash
+tailor-sdk staticwebsite [command]
+```
+
+**Commands**
+
+| Command | Description |
+| ------- | ----------- |
+| `staticwebsite deploy` | Deploy a static website from a local build directory |
+| `staticwebsite list` | List all static websites in a workspace |
+| `staticwebsite get` | Get details of a specific static website |
+
+## staticwebsite deploy
+
+Deploy a static website from a local build directory.
+
+**Usage**
+
+```bash
+tailor-sdk staticwebsite deploy [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+| `--name <NAME>` | `-n` | Static website name | Yes | - |
+| `--dir <DIR>` | `-d` | Path to the static website files | Yes | - |
+
+**Examples**
+
+Deploy a static website from the dist directory:
+
+```bash
+tailor-sdk staticwebsite deploy --name my-website --dir ./dist
+```
+
+Deploy with workspace ID:
+
+```bash
+tailor-sdk staticwebsite deploy -n my-website -d ./dist -w ws_abc123
+```
+
+Deploy with JSON output:
+
+```bash
+tailor-sdk staticwebsite deploy -n my-website -d ./build --json
+```
+
+<Note>
+**Deployment Notes**
+
+- The deployment process uploads all files from the specified directory
+- Files are uploaded with appropriate MIME types based on file extensions
+- Unsupported file types or invalid files will be skipped with warnings
+- The deployment URL is returned after successful deployment
+</Note>
+
+## staticwebsite list
+
+List all static websites in a workspace.
+
+**Usage**
+
+```bash
+tailor-sdk staticwebsite list [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+
+**Examples**
+
+List all static websites:
+
+```bash
+tailor-sdk staticwebsite list
+```
+
+List with JSON output:
+
+```bash
+tailor-sdk staticwebsite list --json
+```
+
+List for a specific workspace:
+
+```bash
+tailor-sdk staticwebsite list -w ws_abc123
+```
+
+## staticwebsite get
+
+Get details of a specific static website.
+
+**Usage**
+
+```bash
+tailor-sdk staticwebsite get [options] <name>
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `name` | Static website name | Yes |
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+
+**Examples**
+
+Get details of a static website:
+
+```bash
+tailor-sdk staticwebsite get my-website
+```
+
+Get with JSON output:
+
+```bash
+tailor-sdk staticwebsite get my-website --json
+```
+
+Get from a specific workspace:
+
+```bash
+tailor-sdk staticwebsite get my-website -w ws_abc123
+```

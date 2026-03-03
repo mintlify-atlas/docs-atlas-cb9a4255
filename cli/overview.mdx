@@ -1,0 +1,342 @@
+---
+title: CLI Overview
+description: Introduction to the Tailor Platform SDK command-line interface, common options, and environment variables
+---
+
+The Tailor Platform SDK provides a powerful command-line interface (CLI) for managing your Tailor Platform applications, workspaces, and resources.
+
+## Installation
+
+The CLI is distributed as part of the `@tailor-platform/sdk` package:
+
+```bash
+npm install @tailor-platform/sdk
+```
+
+The CLI is available as the `tailor-sdk` command.
+
+## Basic Usage
+
+```bash
+tailor-sdk <command> [options]
+```
+
+### Getting Help
+
+View available commands:
+
+```bash
+tailor-sdk --help
+```
+
+View help for a specific command:
+
+```bash
+tailor-sdk <command> --help
+```
+
+### Version Information
+
+Check the installed SDK version:
+
+```bash
+tailor-sdk --version
+```
+
+## Common Options
+
+The following options are available across most CLI commands:
+
+<ParamField path="--env-file" type="string" default="-e">
+  Path to environment file (error if not found). Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--env-file-if-exists" type="string">
+  Path to environment file (ignored if not found). Can be specified multiple times.
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" default="false">
+  Enable verbose logging. Shows stack traces on error for debugging.
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="false">
+  Output results as JSON where applicable. Short alias: `-j`
+</ParamField>
+
+<ParamField path="--workspace-id" type="string">
+  Workspace ID for deployment and resource commands. Short alias: `-w`
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  Workspace profile name. Short alias: `-p`
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file. Short alias: `-c`
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompts. Short alias: `-y`
+</ParamField>
+
+### Environment File Loading
+
+Both `--env-file` and `--env-file-if-exists` follow Node.js `--env-file` behavior:
+
+- Variables already set in the environment are **not** overwritten
+- Later files override earlier files
+- `--env-file` files are loaded first, then `--env-file-if-exists` files
+
+<CodeGroup>
+```bash Single File
+# Load .env (required)
+tailor-sdk apply --env-file .env
+```
+
+```bash Optional File
+# Load .env (required) and .env.local (optional, if exists)
+tailor-sdk apply --env-file .env --env-file-if-exists .env.local
+```
+
+```bash Multiple Files
+# Load multiple required files
+tailor-sdk apply --env-file .env --env-file .env.production
+```
+</CodeGroup>
+
+<Note>
+  Due to a Node.js bug ([#54232](https://github.com/nodejs/node/issues/54232)), you may see warnings about `--env-file` flags. These can be safely ignored.
+</Note>
+
+## Environment Variables
+
+You can configure workspace and authentication using environment variables:
+
+<ParamField path="TAILOR_PLATFORM_WORKSPACE_ID" type="string">
+  Workspace ID for deployment commands. Used when `--workspace-id` is not specified.
+</ParamField>
+
+<ParamField path="TAILOR_PLATFORM_TOKEN" type="string">
+  Authentication token. Alternative to using `tailor-sdk login`. Takes precedence over logged-in user credentials.
+</ParamField>
+
+<ParamField path="TAILOR_TOKEN" type="string">
+  **Deprecated.** Use `TAILOR_PLATFORM_TOKEN` instead. Still supported for backward compatibility.
+</ParamField>
+
+<ParamField path="TAILOR_PLATFORM_PROFILE" type="string">
+  Workspace profile name. Used when `--profile` is not specified.
+</ParamField>
+
+<ParamField path="TAILOR_PLATFORM_SDK_CONFIG_PATH" type="string">
+  Path to SDK config file. Used when `--config` is not specified.
+</ParamField>
+
+<ParamField path="EDITOR" type="string">
+  Editor to open generated files. Examples: `vim`, `code`, `nano`
+</ParamField>
+
+## Resolution Priority
+
+The CLI resolves configuration from multiple sources with a specific priority order:
+
+### Authentication Token Priority
+
+The CLI determines which authentication token to use in this order:
+
+1. `TAILOR_PLATFORM_TOKEN` environment variable
+2. `TAILOR_TOKEN` environment variable (deprecated)
+3. Profile specified via `--profile` option or `TAILOR_PLATFORM_PROFILE` environment variable
+4. Current user from platform config (`~/.config/tailor-platform/config.yaml`)
+
+<CodeGroup>
+```bash Using Environment Variable
+# Highest priority - token from environment
+export TAILOR_PLATFORM_TOKEN="your-token-here"
+tailor-sdk apply
+```
+
+```bash Using Profile
+# Use token associated with a profile
+tailor-sdk apply --profile production
+```
+
+```bash Using Current User
+# Use token from logged-in user (lowest priority)
+tailor-sdk login
+tailor-sdk apply
+```
+</CodeGroup>
+
+### Workspace ID Priority
+
+The CLI determines which workspace to use in this order:
+
+1. `--workspace-id` command option
+2. `TAILOR_PLATFORM_WORKSPACE_ID` environment variable
+3. Profile specified via `--profile` option or `TAILOR_PLATFORM_PROFILE` environment variable
+
+<CodeGroup>
+```bash Command Option
+# Highest priority - explicit workspace ID
+tailor-sdk apply --workspace-id abc123-def456-...
+```
+
+```bash Environment Variable
+# Use workspace ID from environment
+export TAILOR_PLATFORM_WORKSPACE_ID="abc123-def456-..."
+tailor-sdk apply
+```
+
+```bash Profile
+# Use workspace ID from profile
+tailor-sdk apply --profile production
+```
+</CodeGroup>
+
+### Config File Priority
+
+The CLI locates the config file in this order:
+
+1. `--config` command option
+2. `TAILOR_PLATFORM_SDK_CONFIG_PATH` environment variable
+3. Search parent directories for `tailor.config.ts` (default)
+
+<CodeGroup>
+```bash Custom Config Path
+tailor-sdk apply --config ./config/custom.config.ts
+```
+
+```bash Environment Variable
+export TAILOR_PLATFORM_SDK_CONFIG_PATH="./config/custom.config.ts"
+tailor-sdk apply
+```
+
+```bash Auto-discovery
+# Searches for tailor.config.ts in current and parent directories
+tailor-sdk apply
+```
+</CodeGroup>
+
+## Command Categories
+
+The CLI commands are organized into several categories:
+
+### Application Management
+- `init` - Initialize a new project
+- `generate` - Generate files from configuration
+- `apply` - Deploy application to workspace
+- `remove` - Remove application from workspace
+- `show` - Show deployed application info
+
+### Authentication & Users
+- `login` - Login to Tailor Platform
+- `logout` - Logout from Tailor Platform
+- `user` - Manage users and personal access tokens
+
+### Workspace Management
+- `workspace` - Manage workspaces
+- `profile` - Manage workspace profiles
+
+### TailorDB
+- `tailordb truncate` - Truncate tables
+- `tailordb migration` - Generate and manage migrations
+- `tailordb erd` - Export and serve entity-relationship diagrams
+
+### Runtime Resources
+- `workflow` - Manage workflows and executions
+- `executor` - Trigger executors and view jobs
+- `function` - View function execution logs
+- `secret` - Manage secrets and vaults
+- `staticwebsite` - Deploy and manage static websites
+
+### Auth Resources
+- `machineuser` - Manage machine users and tokens
+- `oauth2client` - Manage OAuth2 clients
+
+### Utilities
+- `completion` - Generate shell completion scripts
+
+## Shell Completion
+
+The CLI supports shell completion for bash, zsh, and fish:
+
+<CodeGroup>
+```bash Bash
+# Add to ~/.bashrc
+eval "$(tailor-sdk completion bash)"
+```
+
+```zsh Zsh
+# Add to ~/.zshrc
+eval "$(tailor-sdk completion zsh)"
+```
+
+```fish Fish
+# Add to ~/.config/fish/completions/tailor-sdk.fish
+tailor-sdk completion fish > ~/.config/fish/completions/tailor-sdk.fish
+```
+</CodeGroup>
+
+## Example Workflows
+
+### Development Workflow
+
+```bash
+# Initialize a new project
+tailor-sdk init my-app
+cd my-app
+
+# Generate types and code
+tailor-sdk generate
+
+# Deploy to development workspace
+tailor-sdk apply --profile dev
+
+# View deployed application
+tailor-sdk show --profile dev
+```
+
+### Production Deployment
+
+```bash
+# Load production environment variables
+tailor-sdk apply \
+  --env-file .env.production \
+  --profile production \
+  --yes
+```
+
+### CI/CD Pipeline
+
+```bash
+# Use machine tokens for automated deployments
+export TAILOR_PLATFORM_TOKEN="${CI_TAILOR_TOKEN}"
+export TAILOR_PLATFORM_WORKSPACE_ID="${CI_WORKSPACE_ID}"
+
+tailor-sdk generate
+tailor-sdk apply --yes
+```
+
+## Configuration Storage
+
+The CLI stores user credentials and profiles in:
+
+```
+~/.config/tailor-platform/config.yaml
+```
+
+This file contains:
+- User access tokens and refresh tokens
+- Profile configurations (workspace ID + user mappings)
+- Current user selection
+
+<Note>
+  The CLI automatically migrates from the legacy `~/.tailorctl/config` file if found.
+</Note>
+
+## Next Steps
+
+- Learn about [Authentication](/cli/authentication) - Login, logout, and token management
+- Explore [Application Commands](/cli/init) - Deploy and manage your applications
+- Read about [TailorDB Commands](/cli/tailordb-migration) - Database schema and migrations

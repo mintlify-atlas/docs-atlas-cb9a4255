@@ -1,0 +1,312 @@
+---
+title: "Record Triggers"
+description: "Automatically execute code when TailorDB records are created, updated, or deleted"
+---
+
+Record triggers fire when TailorDB records change, allowing you to automate workflows, send notifications, sync data, and more.
+
+## Overview
+
+Tailor Platform provides three record trigger types:
+
+- `recordCreatedTrigger()` - Fires when a new record is created
+- `recordUpdatedTrigger()` - Fires when a record is updated
+- `recordDeletedTrigger()` - Fires when a record is deleted
+
+Each trigger can include an optional condition function to filter which events trigger the executor.
+
+## recordCreatedTrigger
+
+Fires when a new record is created in TailorDB.
+
+### Parameters
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for new records
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function that receives the event context and returns a boolean. Only triggers if the function returns `true`.
+  
+  **Parameters:**
+  - `newRecord` - The newly created record
+  - `workspaceId` - Workspace identifier
+  - `appNamespace` - Application namespace name
+  - `typeName` - TailorDB type name
+</ParamField>
+
+### Example: New User Notification
+
+```typescript
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+
+export default createExecutor({
+  name: "user-created",
+  description: "Triggered when a new user is created",
+  trigger: recordCreatedTrigger({
+    type: user,
+    condition: ({ newRecord }) => newRecord.email.endsWith("@tailor.tech"),
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ newRecord, typeName }) => {
+      console.log(`New ${typeName} created:`, newRecord.email);
+      // Send welcome email or create user log
+    },
+  },
+});
+```
+
+### Example: High-Value Order Processing
+
+```typescript
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { salesOrder } from "../tailordb/salesOrder";
+
+export default createExecutor({
+  name: "sales-order-created",
+  description: "Triggered when a new sales order is created",
+  trigger: recordCreatedTrigger({
+    type: salesOrder,
+    condition: ({ newRecord }) => (newRecord.totalPrice ?? 0) > 100_0000,
+  }),
+  operation: {
+    kind: "graphql",
+    query: /* gql */ `
+      mutation createSalesOrderCreated($input: SalesOrderCreatedCreateInput!) {
+        createSalesOrderCreated(input: $input) {
+          id
+        }
+      }
+    `,
+    variables: ({ newRecord }) => ({
+      input: {
+        salesOrderID: newRecord.id,
+        customerID: newRecord.customerID,
+        totalPrice: newRecord.totalPrice,
+        status: newRecord.status,
+      },
+    }),
+  },
+});
+```
+
+## recordUpdatedTrigger
+
+Fires when a record is updated in TailorDB.
+
+### Parameters
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for updates
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function that receives the event context and returns a boolean.
+  
+  **Parameters:**
+  - `newRecord` - The updated record state
+  - `oldRecord` - The previous record state
+  - `workspaceId` - Workspace identifier
+  - `appNamespace` - Application namespace name
+  - `typeName` - TailorDB type name
+</ParamField>
+
+### Example: Status Change Notification
+
+```typescript
+import { createExecutor, recordUpdatedTrigger } from "@tailor-platform/sdk";
+import { order } from "../tailordb/order";
+
+export default createExecutor({
+  name: "order-status-changed",
+  description: "Notify when order status changes",
+  trigger: recordUpdatedTrigger({
+    type: order,
+    condition: ({ oldRecord, newRecord }) => 
+      oldRecord.status !== newRecord.status,
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ oldRecord, newRecord, typeName }) => {
+      console.log(`${typeName} status changed:`);
+      console.log(`  From: ${oldRecord.status}`);
+      console.log(`  To: ${newRecord.status}`);
+    },
+  },
+});
+```
+
+### Example: Completion Trigger
+
+```typescript
+import { createExecutor, recordUpdatedTrigger } from "@tailor-platform/sdk";
+import { order } from "../tailordb/order";
+
+export default createExecutor({
+  name: "order-completed",
+  description: "Process completed orders",
+  trigger: recordUpdatedTrigger({
+    type: order,
+    condition: ({ newRecord, oldRecord }) =>
+      newRecord.status === "completed" && oldRecord.status !== "completed",
+  }),
+  operation: {
+    kind: "webhook",
+    url: "https://api.example.com/orders/completed",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    requestBody: ({ newRecord }) => ({
+      orderId: newRecord.id,
+      completedAt: new Date(),
+    }),
+  },
+});
+```
+
+<Note>
+  Use the `condition` function to compare `oldRecord` and `newRecord` to detect specific field changes. This prevents unnecessary executions.
+</Note>
+
+## recordDeletedTrigger
+
+Fires when a record is deleted from TailorDB.
+
+### Parameters
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for deletions
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function that receives the event context and returns a boolean.
+  
+  **Parameters:**
+  - `oldRecord` - The deleted record
+  - `workspaceId` - Workspace identifier
+  - `appNamespace` - Application namespace name
+  - `typeName` - TailorDB type name
+</ParamField>
+
+### Example: Archive Deleted Records
+
+```typescript
+import { createExecutor, recordDeletedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+
+export default createExecutor({
+  name: "user-deleted",
+  description: "Archive deleted users",
+  trigger: recordDeletedTrigger({
+    type: user,
+    condition: ({ oldRecord }) => oldRecord.isActive === true,
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ oldRecord, typeName }) => {
+      console.log(`${typeName} deleted:`, oldRecord.email);
+      // Archive user data or notify administrators
+    },
+  },
+});
+```
+
+## Event Context
+
+All record triggers provide context about the event in the operation function:
+
+### Created Event Context
+
+```typescript
+interface RecordCreatedContext<T> {
+  workspaceId: string;    // Workspace identifier
+  appNamespace: string;   // Application namespace
+  typeName: string;       // TailorDB type name
+  newRecord: T;          // The newly created record
+}
+```
+
+### Updated Event Context
+
+```typescript
+interface RecordUpdatedContext<T> {
+  workspaceId: string;    // Workspace identifier
+  appNamespace: string;   // Application namespace
+  typeName: string;       // TailorDB type name
+  oldRecord: T;          // Previous record state
+  newRecord: T;          // Current record state
+}
+```
+
+### Deleted Event Context
+
+```typescript
+interface RecordDeletedContext<T> {
+  workspaceId: string;    // Workspace identifier
+  appNamespace: string;   // Application namespace
+  typeName: string;       // TailorDB type name
+  oldRecord: T;          // The deleted record
+}
+```
+
+## Best Practices
+
+### Use Condition Functions
+
+Always use condition functions to filter events and prevent unnecessary executions:
+
+```typescript
+trigger: recordUpdatedTrigger({
+  type: user,
+  // Only trigger when email changes
+  condition: ({ oldRecord, newRecord }) => 
+    oldRecord.email !== newRecord.email,
+})
+```
+
+### Access Typed Records
+
+The `newRecord` and `oldRecord` are fully typed based on your TailorDB schema:
+
+```typescript
+import { user } from "../tailordb/user";
+import { t } from "@tailor-platform/sdk";
+
+type UserType = t.infer<typeof user>;
+
+// TypeScript knows all properties
+body: async ({ newRecord }: { newRecord: UserType }) => {
+  console.log(newRecord.email); // Autocomplete works!
+}
+```
+
+### Combine with Database Operations
+
+```typescript
+import { getDB } from "../generated/tailordb";
+
+body: async ({ newRecord }) => {
+  const db = getDB("tailordb");
+  
+  await db
+    .insertInto("UserLog")
+    .values({
+      userID: newRecord.id,
+      message: `User created: ${newRecord.name}`,
+    })
+    .execute();
+}
+```
+
+<Note>
+  Record triggers execute asynchronously after the database transaction commits. They cannot modify the triggering record or prevent the original operation.
+</Note>
+
+## Related
+
+- [Executor Overview](/api/create-executor)
+- [Schedule Trigger](/api/schedule-trigger)
+- [Webhook Trigger](/api/webhook-trigger)
+- [Resolver Trigger](/api/resolver-trigger)

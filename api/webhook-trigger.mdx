@@ -1,0 +1,465 @@
+---
+title: "Webhook Trigger"
+description: "Handle incoming HTTP webhooks from external services"
+---
+
+Webhook triggers allow your Tailor Platform application to receive and process HTTP requests from external services, enabling integrations with third-party platforms.
+
+## Overview
+
+The `incomingWebhookTrigger()` function creates an endpoint that can receive HTTP requests. When a request arrives, the executor processes the webhook payload and can perform any operation in response.
+
+## Parameters
+
+The trigger accepts a generic type parameter to specify the expected webhook structure:
+
+```typescript
+incomingWebhookTrigger<T extends IncomingWebhookRequest>()
+```
+
+<ParamField path="T" type="IncomingWebhookRequest">
+  Type definition for the incoming webhook request structure.
+  
+  ```typescript
+  interface IncomingWebhookRequest {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+  }
+  ```
+</ParamField>
+
+## Basic Example
+
+```typescript
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "test-webhook",
+  description: "Test executor for incoming webhook trigger",
+  trigger: incomingWebhookTrigger<{
+    body: { message: string };
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "function",
+    body: (args) => {
+      console.log("Webhook received:", args.body);
+      console.log("Headers:", args.headers);
+    },
+  },
+});
+```
+
+## Event Context
+
+Webhook triggers receive comprehensive HTTP request information:
+
+```typescript
+interface IncomingWebhookArgs<T> {
+  body: T["body"];                      // Parsed request body
+  headers: T["headers"];                 // Request headers
+  method: "POST" | "GET" | "PUT" | "DELETE"; // HTTP method
+  rawBody: string;                       // Raw request body as string
+  env: TailorEnv;                        // Environment information
+}
+```
+
+### Accessing Request Data
+
+```typescript
+export default createExecutor({
+  name: "webhook-handler",
+  trigger: incomingWebhookTrigger<{
+    body: { event: string; data: unknown };
+    headers: { "x-signature": string };
+  }>(),
+  operation: {
+    kind: "function",
+    body: async ({ body, headers, method, rawBody }) => {
+      console.log(`Received ${method} request`);
+      console.log("Event:", body.event);
+      console.log("Signature:", headers["x-signature"]);
+      console.log("Raw body:", rawBody);
+    },
+  },
+});
+```
+
+## Real-World Examples
+
+### Stripe Webhook Handler
+
+```typescript
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+import { getDB } from "../generated/tailordb";
+
+interface StripeWebhook {
+  type: string;
+  data: { 
+    object: { 
+      id: string; 
+      amount: number;
+      customer: string;
+    } 
+  };
+}
+
+export default createExecutor({
+  name: "stripe-webhook",
+  description: "Handle Stripe payment events",
+  trigger: incomingWebhookTrigger<{
+    body: StripeWebhook;
+    headers: { "stripe-signature": string };
+  }>(),
+  operation: {
+    kind: "function",
+    body: async ({ body, headers }) => {
+      const signature = headers["stripe-signature"];
+      
+      // Verify webhook signature
+      // (In production, use Stripe's SDK to verify)
+      
+      if (body.type === "payment_intent.succeeded") {
+        const db = getDB("tailordb");
+        
+        await db
+          .insertInto("Payment")
+          .values({
+            stripePaymentId: body.data.object.id,
+            amount: body.data.object.amount,
+            customerId: body.data.object.customer,
+            status: "succeeded",
+          })
+          .execute();
+      }
+    },
+  },
+});
+```
+
+### GitHub Webhook Integration
+
+```typescript
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+
+interface GitHubWebhook {
+  action: "opened" | "closed" | "reopened";
+  pull_request: {
+    id: number;
+    title: string;
+    user: { login: string };
+    html_url: string;
+  };
+}
+
+export default createExecutor({
+  name: "github-pr-webhook",
+  description: "Handle GitHub pull request events",
+  trigger: incomingWebhookTrigger<{
+    body: GitHubWebhook;
+    headers: { "x-github-event": string };
+  }>(),
+  operation: {
+    kind: "function",
+    body: async ({ body, headers }) => {
+      const event = headers["x-github-event"];
+      
+      if (event === "pull_request" && body.action === "opened") {
+        console.log(`New PR: ${body.pull_request.title}`);
+        console.log(`Author: ${body.pull_request.user.login}`);
+        console.log(`URL: ${body.pull_request.html_url}`);
+        
+        // Send notification to team
+      }
+    },
+  },
+});
+```
+
+### Generic API Webhook
+
+```typescript
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "api-webhook",
+  description: "Generic webhook endpoint",
+  trigger: incomingWebhookTrigger<{
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "function",
+    body: async ({ body, method, headers }) => {
+      // Log all incoming webhooks
+      console.log({
+        timestamp: new Date().toISOString(),
+        method,
+        body,
+        headers,
+      });
+      
+      // Process based on content
+      if (body.action === "notify") {
+        // Send notification
+      }
+    },
+  },
+});
+```
+
+## Security Considerations
+
+### Verify Webhook Signatures
+
+Always verify webhook signatures from trusted sources:
+
+```typescript
+import crypto from "crypto";
+
+body: async ({ body, headers, rawBody }) => {
+  const signature = headers["x-webhook-signature"];
+  const secret = process.env.WEBHOOK_SECRET;
+  
+  // Verify HMAC signature
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+  
+  if (signature !== expectedSignature) {
+    throw new Error("Invalid webhook signature");
+  }
+  
+  // Process verified webhook
+}
+```
+
+<Note>
+  Use the `rawBody` field for signature verification, as it contains the unmodified request body string.
+</Note>
+
+### Validate Request Source
+
+Check headers to ensure requests come from expected sources:
+
+```typescript
+body: async ({ headers, body }) => {
+  const userAgent = headers["user-agent"];
+  
+  // Verify source (e.g., "Stripe/1.0")
+  if (!userAgent?.startsWith("Stripe/")) {
+    throw new Error("Unauthorized webhook source");
+  }
+  
+  // Process webhook
+}
+```
+
+### Handle Sensitive Data Safely
+
+```typescript
+body: async ({ body }) => {
+  // Don't log sensitive information
+  const sanitized = {
+    event: body.event,
+    timestamp: body.timestamp,
+    // Omit sensitive fields like tokens, emails, etc.
+  };
+  
+  console.log("Webhook received:", sanitized);
+}
+```
+
+## Advanced Patterns
+
+### Webhook to Workflow
+
+Trigger workflows from incoming webhooks:
+
+```typescript
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+import orderProcessingWorkflow from "../workflows/order-processing";
+
+export default createExecutor({
+  name: "order-webhook",
+  trigger: incomingWebhookTrigger<{
+    body: { orderId: string; customerId: string };
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "workflow",
+    workflow: orderProcessingWorkflow,
+    args: ({ body }) => ({
+      orderId: body.orderId,
+      customerId: body.customerId,
+    }),
+  },
+});
+```
+
+### Webhook to GraphQL
+
+Execute GraphQL mutations from webhook events:
+
+```typescript
+export default createExecutor({
+  name: "webhook-to-graphql",
+  trigger: incomingWebhookTrigger<{
+    body: { userId: string; status: string };
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "graphql",
+    query: `
+      mutation UpdateUserStatus($userId: ID!, $status: String!) {
+        updateUser(id: $userId, input: { status: $status }) {
+          id
+          status
+        }
+      }
+    `,
+    variables: ({ body }) => ({
+      userId: body.userId,
+      status: body.status,
+    }),
+  },
+});
+```
+
+### Webhook Forwarding
+
+Forward webhooks to other services:
+
+```typescript
+export default createExecutor({
+  name: "webhook-forwarder",
+  trigger: incomingWebhookTrigger<{
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "webhook",
+    url: "https://api.internal.com/webhooks/process",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Forwarded-From": "tailor-platform",
+    },
+    requestBody: ({ body, headers }) => ({
+      originalBody: body,
+      receivedAt: new Date().toISOString(),
+      sourceHeaders: headers,
+    }),
+  },
+});
+```
+
+## Best Practices
+
+### Type Your Webhooks
+
+Define clear interfaces for webhook payloads:
+
+```typescript
+interface MyServiceWebhook {
+  event: "user.created" | "user.updated" | "user.deleted";
+  timestamp: string;
+  data: {
+    userId: string;
+    email: string;
+  };
+}
+
+incomingWebhookTrigger<{
+  body: MyServiceWebhook;
+  headers: { "x-api-key": string };
+}>()
+```
+
+### Implement Idempotency
+
+Prevent duplicate processing:
+
+```typescript
+body: async ({ body }) => {
+  const db = getDB("tailordb");
+  const webhookId = body.id;
+  
+  // Check if already processed
+  const existing = await db
+    .selectFrom("ProcessedWebhooks")
+    .where("webhookId", "=", webhookId)
+    .executeTakeFirst();
+  
+  if (existing) {
+    console.log("Webhook already processed");
+    return;
+  }
+  
+  // Process webhook
+  // ...
+  
+  // Mark as processed
+  await db
+    .insertInto("ProcessedWebhooks")
+    .values({ webhookId, processedAt: new Date() })
+    .execute();
+}
+```
+
+### Handle Errors Gracefully
+
+```typescript
+body: async ({ body }) => {
+  try {
+    // Process webhook
+  } catch (error) {
+    console.error("Webhook processing failed:", error);
+    // Log to monitoring system
+    // Consider retry logic
+    throw error; // Re-throw to signal failure
+  }
+}
+```
+
+### Respond Quickly
+
+Most webhook providers expect fast responses (< 5 seconds):
+
+```typescript
+// For long-running tasks, trigger a workflow
+operation: {
+  kind: "workflow",
+  workflow: longRunningTask,
+  args: ({ body }) => ({ data: body }),
+}
+
+// Or use jobFunction
+operation: {
+  kind: "jobFunction",
+  body: async ({ body }) => {
+    // Long-running processing
+  },
+}
+```
+
+<Note>
+  Webhook endpoints are publicly accessible by default. Always implement authentication and validation to prevent abuse.
+</Note>
+
+## Webhook URL
+
+After deploying your executor, the webhook URL will be available in your Tailor Platform dashboard. The URL format is typically:
+
+```
+https://{workspace}.tailor.tech/webhooks/{executor-name}
+```
+
+Provide this URL to the external service you're integrating with.
+
+## Related
+
+- [Executor Overview](/api/create-executor)
+- [Record Triggers](/api/record-triggers)
+- [Schedule Trigger](/api/schedule-trigger)
+- [Workflow Operation](https://docs.tailor.tech/guides/executor/overview)

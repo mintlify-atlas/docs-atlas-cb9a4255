@@ -1,0 +1,413 @@
+---
+title: createWorkflow & createWorkflowJob
+description: Orchestrate multi-step operations with durable execution and job dependencies.
+---
+
+## Overview
+
+Workflows orchestrate multiple jobs that can depend on each other, enabling complex multi-step operations with durable execution. Use `createWorkflowJob` to define individual jobs and `createWorkflow` to compose them into a complete workflow.
+
+## createWorkflowJob
+
+Define individual workflow jobs that can be triggered from other jobs or specified as a workflow's main entry point.
+
+### Function Signature
+
+```typescript
+function createWorkflowJob<
+  Name extends string,
+  Input = undefined,
+  Output = undefined
+>(config: {
+  name: Name;
+  body: (input: Input, context: WorkflowJobContext) => Output | Promise<Output>;
+}): WorkflowJob<Name, Input, Awaited<Output>>
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  Unique job name across the entire project (not just within one file).
+</ParamField>
+
+<ParamField path="body" type="function" required>
+  Async function that processes the job input. Receives input data and context object.
+  
+  **Context Object Structure:**
+  
+  <ResponseField name="env" type="TailorEnv">
+    Environment variables defined in `tailor.config.ts`.
+  </ResponseField>
+  
+  <ResponseField name="user" type="TailorUser">
+    User triggering the workflow.
+    
+    ```typescript
+    interface TailorUser {
+      id: string;
+      type: string;
+      workspaceId: string;
+      attributes?: Record<string, unknown>;
+      attributeList?: string[];
+    }
+    ```
+  </ResponseField>
+</ParamField>
+
+### Return Value
+
+<ResponseField name="trigger" type="function">
+  Function to trigger the job from other jobs. Returns `Promise<Jsonify<Output>>`.
+  
+  ```typescript
+  // Trigger with input
+  const result = await fetchCustomer.trigger({ customerId: "123" });
+  
+  // Trigger without input
+  const result = await processData.trigger();
+  ```
+  
+  <Note>
+    On the Tailor runtime, `.trigger()` calls are synchronous and `await` is stripped by the bundler. Use `await` for type safety in your source code.
+  </Note>
+</ResponseField>
+
+### Input and Output Type Constraints
+
+**Input types** must be JSON-compatible:
+
+```typescript
+// ✅ Valid input types
+body: async (input: { id: string; count: number; tags: string[] }) => {
+  // ...
+}
+
+// ❌ Invalid - Date is not JSON-compatible for input
+body: async (input: { createdAt: Date }) => {
+  // ...
+}
+```
+
+**Output types** are more permissive - `Date` and objects with `toJSON()` are allowed:
+
+```typescript
+// ✅ Valid - Date in output is serialized to string
+body: async (input: { id: string }) => {
+  return { id: input.id, processedAt: new Date() };
+}
+```
+
+<Warning>
+  Input and output are serialized as JSON when passed between jobs. Only primitives (`string`, `number`, `boolean`, `null`), arrays, and plain objects are allowed in inputs. Outputs can include `Date` and other types with `toJSON()` methods.
+</Warning>
+
+## createWorkflow
+
+Compose jobs into a complete workflow with a main entry point.
+
+### Function Signature
+
+```typescript
+function createWorkflow<Job extends WorkflowJob>(
+  config: {
+    name: string;
+    mainJob: Job;
+  }
+): Workflow<Job>
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  Unique workflow name.
+</ParamField>
+
+<ParamField path="mainJob" type="WorkflowJob" required>
+  The entry point job for the workflow. Must be a job created with `createWorkflowJob`.
+</ParamField>
+
+### Return Value
+
+<ResponseField name="trigger" type="function">
+  Function to trigger the workflow. Returns `Promise<string>` (workflow run ID).
+  
+  ```typescript
+  // From a resolver
+  const workflowRunId = await orderProcessingWorkflow.trigger(
+    { orderId: "123", customerId: "456" },
+    { authInvoker: auth.invoker("manager-machine-user") }
+  );
+  ```
+</ResponseField>
+
+## Workflow Rules
+
+<Warning>
+  **Critical Requirements:**
+  
+  - `createWorkflow` result **must** be default exported
+  - All jobs **must** be named exports (including mainJob and triggered jobs)
+  - Job names must be unique across the entire project
+  - Every workflow must specify a `mainJob`
+</Warning>
+
+| Rule | Description |
+| --- | --- |
+| Workflow export | Must use `export default` |
+| Job exports | Must use named exports (`export const`) |
+| Job name uniqueness | Job names must be unique across entire project |
+| mainJob required | Every workflow must specify a `mainJob` |
+
+## Triggering Jobs
+
+Use `.trigger()` to start other jobs from within a job body:
+
+```typescript
+import { createWorkflowJob } from "@tailor-platform/sdk";
+import { fetchCustomer } from "./jobs/fetch-customer";
+import { sendNotification } from "./jobs/send-notification";
+
+export const mainJob = createWorkflowJob({
+  name: "main-job",
+  body: async (input: { customerId: string }) => {
+    // Trigger other jobs
+    const customer = await fetchCustomer.trigger({
+      customerId: input.customerId,
+    });
+    
+    const notification = await sendNotification.trigger({
+      message: "Order processed",
+      recipient: customer.email,
+    });
+    
+    return { customer, notification };
+  },
+});
+```
+
+<Note>
+  `.trigger()` returns a `Promise` for type safety. During deployment bundling, these calls are transformed to synchronous runtime calls and `await` is removed. On the server, the calling job suspends until the triggered job completes.
+</Note>
+
+<Warning>
+  On the Tailor runtime, job triggers are executed synchronously. `Promise.all([jobA.trigger(), jobB.trigger()])` will NOT run jobs in parallel.
+</Warning>
+
+## Examples
+
+### Simple Workflow Job
+
+```typescript title="workflows/jobs/fetch-customer.ts" /home/daytona/workspace/source/example/workflows/jobs/fetch-customer.ts:4-15
+import { createWorkflowJob } from "@tailor-platform/sdk";
+import { getDB } from "../../generated/tailordb";
+
+export const fetchCustomer = createWorkflowJob({
+  name: "fetch-customer",
+  body: async (input: { customerId: string }) => {
+    const db = getDB("tailordb");
+    const customer = await db
+      .selectFrom("Customer")
+      .selectAll()
+      .where("id", "=", input.customerId)
+      .executeTakeFirst();
+    return customer;
+  },
+});
+```
+
+### Job Triggering Other Jobs
+
+```typescript title="workflows/sample.ts" /home/daytona/workspace/source/example/workflows/sample.ts:5-35
+import { createWorkflow, createWorkflowJob } from "@tailor-platform/sdk";
+import { format } from "date-fns";
+import { getDB } from "../generated/tailordb";
+
+export const process_payment = createWorkflowJob({
+  name: "process-payment",
+  body: async () => {
+    const db = getDB("tailordb");
+    const invoices = await db.selectFrom("Invoice").selectAll().execute();
+    return invoices.reduce(
+      (sum, invoice) => [...sum, invoice.status],
+      [] as (typeof invoices)[number]["status"][],
+    );
+  },
+});
+
+export const check_inventory = createWorkflowJob({
+  name: "check-inventory",
+  body: () => format(new Date(), "yyyy-MM-dd HH:mm:ss"),
+});
+
+export const validate_order = createWorkflowJob({
+  name: "validate-order",
+  body: async (input: { orderId: string }) => {
+    console.log("Order ID:", input.orderId);
+    const inventoryResult = await check_inventory.trigger();
+    const paymentResult = await process_payment.trigger();
+    return { inventoryResult, paymentResult };
+  },
+});
+
+export default createWorkflow({
+  name: "sample-workflow",
+  mainJob: validate_order,
+});
+```
+
+### Complete Workflow with Multiple Jobs
+
+```typescript title="workflows/order-processing.ts" /home/daytona/workspace/source/example/workflows/order-processing.ts:7-42
+import { createWorkflow, createWorkflowJob } from "@tailor-platform/sdk";
+import { fetchCustomer } from "./jobs/fetch-customer";
+import { sendNotification } from "./jobs/send-notification";
+
+export const processOrder = createWorkflowJob({
+  name: "process-order",
+  body: async (input: { orderId: string; customerId: string }, { env, user }) => {
+    // Log env and user for demonstration
+    console.log("Environment:", env);
+    console.log("User:", user.id);
+
+    // Fetch customer information using trigger
+    const customer = await fetchCustomer.trigger({
+      customerId: input.customerId,
+    });
+
+    if (!customer) {
+      throw new Error(`Customer ${input.customerId} not found`);
+    }
+
+    // Send notification to customer using trigger
+    const notification = await sendNotification.trigger({
+      message: `Your order ${input.orderId} is being processed`,
+      recipient: customer.email,
+    });
+
+    return {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      customerEmail: customer.email,
+      notificationSent: notification.sent,
+      processedAt: notification.timestamp,
+    };
+  },
+});
+
+export default createWorkflow({
+  name: "order-processing",
+  mainJob: processOrder,
+});
+```
+
+### Notification Job
+
+```typescript title="workflows/jobs/send-notification.ts" /home/daytona/workspace/source/example/workflows/jobs/send-notification.ts:4-12
+import { createWorkflowJob } from "@tailor-platform/sdk";
+import { format } from "date-fns";
+
+export const sendNotification = createWorkflowJob({
+  name: "send-notification",
+  body: async (input: { message: string; recipient: string }) => {
+    const timestamp = format(new Date(), "yyyy-MM-dd HH:mm:ss");
+    console.log(`[${timestamp}] Sending to ${input.recipient}: ${input.message}`);
+    return { sent: true, timestamp };
+  },
+});
+```
+
+## Triggering Workflows from Resolvers
+
+Start workflow execution from a resolver using `workflow.trigger()`:
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+import { auth } from "../tailor.config";
+import orderProcessingWorkflow from "../workflows/order-processing";
+
+export default createResolver({
+  name: "triggerOrderProcessing",
+  operation: "mutation",
+  input: {
+    orderId: t.string(),
+    customerId: t.string(),
+  },
+  body: async ({ input }) => {
+    const workflowRunId = await orderProcessingWorkflow.trigger(
+      { orderId: input.orderId, customerId: input.customerId },
+      { authInvoker: auth.invoker("manager-machine-user") },
+    );
+    return { workflowRunId };
+  },
+  output: t.object({ workflowRunId: t.string() }),
+});
+```
+
+<ParamField path="args" type="object" required>
+  Arguments matching the mainJob's input type.
+</ParamField>
+
+<ParamField path="options.authInvoker" type="AuthInvoker">
+  Optional machine user credentials for authentication.
+</ParamField>
+
+## File Organization
+
+Recommended file structure for workflows:
+
+```
+workflows/
+├── jobs/
+│   ├── fetch-customer.ts    # export const fetchCustomer = createWorkflowJob(...)
+│   └── send-notification.ts # export const sendNotification = createWorkflowJob(...)
+└── order-processing.ts      # export const processOrder = createWorkflowJob(...)
+                             # export default createWorkflow(...)
+```
+
+All jobs can be in a single file or split across multiple files, as long as they are named exports.
+
+## CLI Commands
+
+Manage workflows using the CLI:
+
+```bash
+# List workflows
+tailor-sdk workflow list
+
+# Get workflow details
+tailor-sdk workflow get <name>
+
+# Start a workflow
+tailor-sdk workflow start <name> -m <machine-user> -a '{"key": "value"}'
+
+# List executions
+tailor-sdk workflow executions
+
+# Get execution details with logs
+tailor-sdk workflow executions <execution-id> --logs
+
+# Resume a failed execution
+tailor-sdk workflow resume <execution-id>
+```
+
+See the Workflow CLI Commands documentation for full details.
+
+## Durable Execution
+
+Workflows provide:
+
+- **Job orchestration** with dependencies
+- **Durable execution** with automatic state management
+- **Resume capabilities** from failure points
+- **Access to TailorDB** via Kysely query builder
+- **Job triggering** to compose multi-step logic
+
+<Note>
+  Workflows automatically manage state and can resume from the point of failure, making them ideal for long-running or complex multi-step operations.
+</Note>
+
+## See Also
+
+- [Tailor Platform Workflow Guide](https://docs.tailor.tech/guides/workflow) - Official documentation
+- [createExecutor](/api/create-executor) - Trigger workflows from executors
+- [createResolver](/api/create-resolver) - Trigger workflows from resolvers

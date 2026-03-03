@@ -1,0 +1,399 @@
+---
+title: Type Safety
+description: Learn how TypeScript types flow through the Tailor Platform SDK and ensure type-safe application development
+---
+
+The Tailor Platform SDK provides comprehensive TypeScript type safety throughout your application, from database schemas to resolvers, executors, and workflows. Types are inferred automatically, reducing boilerplate while maintaining strict type checking.
+
+## Type Builders
+
+The SDK provides type builders through the `t` namespace for defining inputs and outputs:
+
+```typescript
+import { t } from "@tailor-platform/sdk";
+
+// Primitive types
+t.string()
+t.int()
+t.float()
+t.bool()
+t.uuid()
+
+// Complex types
+t.enum(["MANAGER", "STAFF"])
+t.object({
+  name: t.string(),
+  email: t.string(),
+})
+t.array(t.string())
+```
+
+### Type Modifiers
+
+Add descriptions and validations to enhance type definitions:
+
+```typescript resolvers/add.ts
+import { createResolver, t } from "@tailor-platform/sdk";
+
+const validators: [(a: { value: number }) => boolean, string][] = [
+  [({ value }) => value >= 0, "Value must be non-negative"],
+  [({ value }) => value < 10, "Value must be less than 10"],
+];
+
+export default createResolver({
+  name: "add",
+  description: "Addition operation",
+  operation: "query",
+  input: {
+    a: t
+      .int()
+      .description("First number to add")
+      .validate(...validators),
+    b: t
+      .int()
+      .description("Second number to add")
+      .validate(...validators),
+  },
+  body: ({ input }) => input.a + input.b,
+  output: t.int().description("Sum of the two input numbers"),
+});
+```
+
+## Database Type Safety
+
+TailorDB types are defined using the `db` namespace and automatically provide TypeScript types:
+
+```typescript tailordb/user.ts
+import { db } from "@tailor-platform/sdk";
+
+export const user = db
+  .type("User", {
+    name: db.string(),
+    email: db.string().unique(),
+    status: db.string({ optional: true }),
+    department: db.string({ optional: true }),
+    role: db.enum(["MANAGER", "STAFF"]),
+    ...db.fields.timestamps(),
+  })
+  .files({ avatar: "profile image" })
+  .indexes(
+    { fields: ["name", "department"], unique: false },
+    { fields: ["status", "createdAt"], unique: false, name: "user_status_created_idx" }
+  );
+```
+
+### Type Inference with `t.infer`
+
+Extract TypeScript types from TailorDB definitions:
+
+```typescript executors/userRecordLog.ts
+import { t } from "@tailor-platform/sdk";
+import { getDB } from "../generated/tailordb";
+import { user } from "../tailordb/user";
+
+export default async ({ newRecord }: { newRecord: t.infer<typeof user> }) => {
+  const db = getDB("tailordb");
+  const record = await db
+    .selectFrom("User")
+    .selectAll()
+    .where("id", "=", newRecord.id)
+    .executeTakeFirst();
+
+  await db
+    .insertInto("UserLog")
+    .values({
+      userID: newRecord.id,
+      message: `User created: ${record?.name} (${record?.email})`,
+    })
+    .execute();
+};
+```
+
+<Info>
+  `t.infer<typeof user>` extracts the TypeScript type from the database schema definition, ensuring type consistency across your application.
+</Info>
+
+### Relations and Type Safety
+
+Relations between types are automatically typed:
+
+```typescript tailordb/salesOrder.ts
+import { db } from "@tailor-platform/sdk";
+import { customer } from "./customer";
+import { user } from "./user";
+
+export const salesOrder = db
+  .type(["SalesOrder", "SalesOrderList"], {
+    customerID: db.uuid().relation({
+      type: "n-1",
+      toward: { type: customer },
+    }),
+    approvedByUserIDs: db.uuid({ optional: true, array: true }).relation({
+      type: "keyOnly",
+      toward: { type: user },
+    }),
+    totalPrice: db.int({ optional: true }),
+    discount: db.float({ optional: true }),
+    status: db.string({ optional: true }),
+    ...db.fields.timestamps(),
+  })
+  .files({
+    receipt: "receipt file",
+    form: "order form file",
+  });
+```
+
+## Resolver Type Safety
+
+Resolvers automatically infer input and output types:
+
+```typescript resolvers/userInfo.ts
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "showUserInfo",
+  description: "Show current user information",
+  operation: "query",
+  body: (context) => {
+    return {
+      id: context.user.id,
+      type: context.user.type,
+      workspaceId: context.user.workspaceId,
+      role: context.user.attributes?.role ?? "MANAGER",
+    };
+  },
+  output: t
+    .object({
+      id: t.string().description("User ID"),
+      type: t.string().description("User type"),
+      workspaceId: t.string().description("Workspace ID"),
+      role: t.enum(["MANAGER", "STAFF"]).description("User role"),
+    })
+    .description("User information"),
+});
+```
+
+### Context Type Safety
+
+The resolver context is fully typed:
+
+```typescript
+body: ({ input, env, user, db }) => {
+  // input: inferred from input definition
+  // env: inferred from config env variables
+  // user: { id: string; type: string; workspaceId: string; attributes?: Record<string, any> }
+  // db: getDB() for database access
+}
+```
+
+## Executor Type Safety
+
+Executors enforce type safety for triggers and operations:
+
+```typescript executors/userCreated.ts
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+import userRecordLog from "./userRecordLog";
+
+export default createExecutor({
+  name: "user-created",
+  description: "Triggered when a new user is created",
+  trigger: recordCreatedTrigger({
+    type: user,
+    condition: ({ newRecord }) => newRecord.email.endsWith("@tailor.tech"),
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      await userRecordLog(args);
+    },
+  },
+});
+```
+
+<Note>
+  The `newRecord` parameter in the condition function is automatically typed based on the `user` type definition.
+</Note>
+
+## Workflow Type Safety
+
+Workflow jobs have fully typed inputs and outputs:
+
+```typescript workflows/sample.ts
+import { createWorkflow, createWorkflowJob } from "@tailor-platform/sdk";
+import { format } from "date-fns";
+import { getDB } from "../generated/tailordb";
+
+export const process_payment = createWorkflowJob({
+  name: "process-payment",
+  body: async () => {
+    const db = getDB("tailordb");
+    const invoices = await db.selectFrom("Invoice").selectAll().execute();
+    return invoices.reduce(
+      (sum, invoice) => [...sum, invoice.status],
+      [] as (typeof invoices)[number]["status"][],
+    );
+  },
+});
+
+export const check_inventory = createWorkflowJob({
+  name: "check-inventory",
+  body: () => format(new Date(), "yyyy-MM-dd HH:mm:ss"),
+});
+
+export const validate_order = createWorkflowJob({
+  name: "validate-order",
+  body: async (input: { orderId: string }) => {
+    console.log("Order ID:", input.orderId);
+    const inventoryResult = await check_inventory.trigger();
+    const paymentResult = await process_payment.trigger();
+    return { inventoryResult, paymentResult };
+  },
+});
+
+export default createWorkflow({
+  name: "sample-workflow",
+  mainJob: validate_order,
+});
+```
+
+### Job Trigger Type Inference
+
+When triggering jobs, the return type is automatically inferred:
+
+```typescript workflows/order-processing.ts
+import { createWorkflow, createWorkflowJob } from "@tailor-platform/sdk";
+import { fetchCustomer } from "./jobs/fetch-customer";
+import { sendNotification } from "./jobs/send-notification";
+
+export const processOrder = createWorkflowJob({
+  name: "process-order",
+  body: async (input: { orderId: string; customerId: string }, { env, user }) => {
+    // Fetch customer information using trigger
+    const customer = await fetchCustomer.trigger({
+      customerId: input.customerId,
+    });
+
+    if (!customer) {
+      throw new Error(`Customer ${input.customerId} not found`);
+    }
+
+    // Send notification to customer using trigger
+    const notification = await sendNotification.trigger({
+      message: `Your order ${input.orderId} is being processed`,
+      recipient: customer.email,
+    });
+
+    return {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      customerEmail: customer.email,
+      notificationSent: notification.sent,
+      processedAt: notification.timestamp,
+    };
+  },
+});
+
+export default createWorkflow({
+  name: "order-processing",
+  mainJob: processOrder,
+});
+```
+
+<Info>
+  The `.trigger()` method returns a `Promise` with the job's return type automatically inferred. Always use `await` to get the result.
+</Info>
+
+## Generated Types
+
+The SDK can generate TypeScript types from your TailorDB schema for use with query builders:
+
+```typescript tailor.config.ts
+import { defineConfig, definePlugins } from "@tailor-platform/sdk";
+import { kyselyTypePlugin } from "@tailor-platform/sdk/plugin/kysely-type";
+
+export default defineConfig({
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+    },
+  },
+});
+
+export const plugins = definePlugins(
+  kyselyTypePlugin({ distPath: "./generated/tailordb.ts" }),
+);
+```
+
+Generate types with:
+
+```bash
+tailor-sdk generate
+```
+
+Use generated types with `getDB()`:
+
+```typescript
+import { getDB } from "../generated/tailordb";
+
+const db = getDB("tailordb");
+// db is fully typed with Kysely query builder
+```
+
+## Validation
+
+Validations are type-safe and enforce constraints at runtime:
+
+```typescript tailordb/customer.ts
+import { db } from "@tailor-platform/sdk";
+
+export const customer = db
+  .type("Customer", "Customer information", {
+    name: db.string(),
+    email: db.string(),
+    city: db.string({ optional: true }).validate(
+      ({ value }) => (value ? value.length > 1 : true),
+      ({ value }) => (value ? value.length < 100 : true),
+    ),
+    fullAddress: db.string(),
+    ...db.fields.timestamps(),
+  })
+  .validate({
+    name: [({ value }) => value.length > 5, "Name must be longer than 5 characters"],
+  });
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Export Types" icon="file-export">
+    Always export both the runtime value and TypeScript type for TailorDB definitions:
+    ```typescript
+    export const user = db.type(...);
+    export type user = typeof user;
+    ```
+  </Card>
+  
+  <Card title="Use t.infer" icon="code">
+    Use `t.infer<typeof type>` to extract TypeScript types from database schemas instead of manually typing.
+  </Card>
+  
+  <Card title="Generate Types" icon="wand-magic-sparkles">
+    Run `tailor-sdk generate` to create Kysely types for type-safe database queries.
+  </Card>
+  
+  <Card title="Describe Everything" icon="message">
+    Add `.description()` to inputs and outputs for better GraphQL documentation.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/concepts/configuration">
+    Learn about tailor.config.ts structure
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/concepts/deployment">
+    Understand the deployment workflow
+  </Card>
+</CardGroup>

@@ -1,0 +1,215 @@
+---
+title: "defineConfig"
+description: "Define the main application configuration for Tailor Platform SDK"
+---
+
+## Function Signature
+
+```typescript
+function defineConfig<
+  const Config extends AppConfig &
+    Record<Exclude<keyof Config, keyof AppConfig>, never>,
+>(config: Config): Config
+```
+
+Defines a Tailor SDK application configuration with shallow type exactness to prevent extraneous properties.
+
+## Parameters
+
+<ParamField path="config" type="AppConfig" required>
+  Application configuration object
+  
+  <ParamField path="name" type="string" required>
+    Application name (required)
+  </ParamField>
+  
+  <ParamField path="env" type="Record<string, string | number | boolean>">
+    Environment variables accessible via `context.env` in resolvers and via the second argument `{ env }` in workflow job bodies
+  </ParamField>
+  
+  <ParamField path="cors" type="string[]">
+    Allowed CORS origins. Must be an array of strings, e.g. `["https://example.com"]`
+  </ParamField>
+  
+  <ParamField path="allowedIpAddresses" type="string[]">
+    IP addresses allowed to access the application
+  </ParamField>
+  
+  <ParamField path="disableIntrospection" type="boolean">
+    Disable GraphQL introspection in production
+  </ParamField>
+  
+  <ParamField path="db" type="TailorDBServiceInput">
+    TailorDB service configuration with type definition files
+    
+    <ParamField path="[namespace]" type="object">
+      TailorDB namespace configuration (e.g., `tailordb`, `analyticsdb`)
+      
+      <ParamField path="files" type="string[]" required>
+        Array of file glob patterns for type definitions
+      </ParamField>
+      
+      <ParamField path="erdSite" type="string">
+        Name of the static website for ERD visualization
+      </ParamField>
+      
+      <ParamField path="migration" type="object">
+        Migration configuration
+        
+        <ParamField path="directory" type="string">
+          Directory containing migration files
+        </ParamField>
+      </ParamField>
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="resolver" type="ResolverServiceInput">
+    Resolver service configuration with resolver files
+    
+    <ParamField path="[namespace]" type="object">
+      Resolver namespace configuration
+      
+      <ParamField path="files" type="string[]" required>
+        Array of file glob patterns for resolver files
+      </ParamField>
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="idp" type="IdPConfig[]">
+    Identity Provider configurations. Must be an array, e.g. `[myIdp]`
+  </ParamField>
+  
+  <ParamField path="auth" type="AuthConfig">
+    Auth configuration (single object, not an array)
+  </ParamField>
+  
+  <ParamField path="executor" type="ExecutorServiceInput">
+    Executor service configuration with executor files
+    
+    <ParamField path="files" type="string[]" required>
+      Array of file glob patterns for executor files
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="workflow" type="WorkflowServiceInput">
+    Workflow service configuration with workflow files
+    
+    <ParamField path="files" type="string[]" required>
+      Array of file glob patterns for workflow files
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="staticWebsites" type="StaticWebsiteConfig[]">
+    Static website configurations. Must be an array, e.g. `[website]`
+  </ParamField>
+  
+  <ParamField path="inlineSourcemap" type="boolean" default="true">
+    Enable inline sourcemaps in bundled functions for better error stack traces. Set to `false` to disable (e.g., if bundle size exceeds limits)
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="config" type="Config">
+  The same configuration object passed as input, with type safety enforced
+</ResponseField>
+
+## Example
+
+```typescript
+import {
+  defineAuth,
+  defineConfig,
+  defineIdp,
+  defineStaticWebSite,
+} from "@tailor-platform/sdk";
+
+const website = defineStaticWebSite("my-frontend", {
+  description: "my frontend application",
+});
+
+const erdSite = defineStaticWebSite("my-erd-site", {
+  description: "ERD site for TailorDB",
+});
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+  userAuthPolicy: {
+    useNonEmailIdentifier: false,
+    allowSelfPasswordReset: true,
+    passwordRequireUppercase: true,
+    passwordRequireLowercase: true,
+    passwordRequireNonAlphanumeric: true,
+    passwordRequireNumeric: true,
+    passwordMinLength: 8,
+    passwordMaxLength: 128,
+  },
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+    attributes: {
+      role: true,
+    },
+  },
+  machineUsers: {
+    "manager-machine-user": {
+      attributes: {
+        role: "MANAGER",
+      },
+    },
+  },
+  oauth2Clients: {
+    sample: {
+      redirectURIs: ["https://example.com/callback", `${website.url}/callback`],
+      description: "Sample OAuth2 client",
+      grantTypes: ["authorization_code", "refresh_token"],
+    },
+  },
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+
+export default defineConfig({
+  name: "my-app",
+  inlineSourcemap: false,
+  env: {
+    foo: 1,
+    bar: "hello",
+    baz: true,
+  },
+  cors: [
+    website.url, // Replaced with actual Static Website URL at deployment
+  ],
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+      erdSite: erdSite.name,
+      migration: {
+        directory: "./migrations",
+      },
+    },
+    analyticsdb: { files: ["./analyticsdb/*.ts"] },
+  },
+  resolver: {
+    "my-resolver": { files: ["./resolvers/*.ts"] },
+  },
+  idp: [idp],
+  auth,
+  executor: { files: ["./executors/*.ts"] },
+  workflow: {
+    files: ["./workflows/**/*.ts"],
+  },
+  staticWebsites: [website, erdSite],
+});
+```
+
+## Notes
+
+- The function enforces shallow exactness, preventing extra properties at the top level of the config object
+- This is the main entry point for configuring your Tailor Platform application
+- Export the result as the default export in your `tailor.config.ts` file
+- The `cors` field accepts static website URLs via the `.url` property, which are resolved at deployment time
+- The `auth` field is a single object, not an array, while `idp` and `staticWebsites` are arrays

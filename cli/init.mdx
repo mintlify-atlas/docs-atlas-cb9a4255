@@ -1,0 +1,99 @@
+---
+title: init
+description: Initialize a new Tailor Platform project using the create-sdk scaffolding tool
+---
+
+Initialize a new Tailor Platform project using the create-sdk scaffolding tool. This command detects your package manager and runs the appropriate create command with the specified template.
+
+## Command Syntax
+
+```bash
+tailor-sdk init [options] [name]
+```
+
+## Arguments
+
+<ParamField path="name" type="string">
+  Project name for the new application. If not provided, you'll be prompted interactively.
+</ParamField>
+
+## Options
+
+<ParamField path="--template" type="string" default="undefined">
+  Template name to use for project initialization. Available templates are provided by `@tailor-platform/sdk`.
+  
+  **Alias:** `-t`
+</ParamField>
+
+### Common Options
+
+The following common options are also available:
+
+- `--env-file` / `-e` - Path to environment file (error if not found)
+- `--env-file-if-exists` - Path to environment file (ignored if not found)
+- `--verbose` - Enable verbose logging (show stack traces on error)
+
+## Usage Examples
+
+### Initialize with Interactive Prompts
+
+```bash
+tailor-sdk init
+```
+
+This will prompt you for the project name and template selection.
+
+### Initialize with Project Name
+
+```bash
+tailor-sdk init my-app
+```
+
+Creates a new project named "my-app" using the default template.
+
+### Initialize with Specific Template
+
+```bash
+tailor-sdk init my-app --template basic
+```
+
+Creates a new project using the "basic" template.
+
+```bash
+tailor-sdk init --template advanced
+```
+
+Prompts for project name but uses the "advanced" template.
+
+## Implementation Details
+
+The `init` command:
+
+1. Detects your package manager (npm, yarn, pnpm, or bun) from the `npm_config_user_agent` environment variable
+2. Falls back to npm if detection fails
+3. Runs the appropriate create command: `<package-manager> create @tailor-platform/sdk@<version>`
+4. Passes through the project name and template arguments
+
+<Note>
+The SDK version used for initialization matches the version of your installed `tailor-sdk` CLI, ensuring compatibility.
+</Note>
+
+## After Initialization
+
+Once your project is initialized, navigate to the project directory:
+
+```bash
+cd my-app
+```
+
+Then install dependencies and start development:
+
+```bash
+npm install
+npm run dev
+```
+
+## Related Commands
+
+- [`generate`](/cli/generate) - Generate files from your Tailor configuration
+- [`apply`](/cli/apply) - Deploy your application to a workspace

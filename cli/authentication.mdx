@@ -1,0 +1,505 @@
+---
+title: Authentication
+description: Login, logout, token management, and workspace profiles for the Tailor Platform CLI
+---
+
+The Tailor Platform CLI supports multiple authentication methods to suit different workflows, from interactive development to automated CI/CD pipelines.
+
+## Login
+
+Authenticate interactively using your browser:
+
+```bash
+tailor-sdk login
+```
+
+This command:
+
+1. Starts a local OAuth2 callback server on port 8085
+2. Opens your default browser to the Tailor Platform login page
+3. Redirects back to the CLI after successful authentication
+4. Stores your access token and refresh token in `~/.config/tailor-platform/config.yaml`
+5. Sets you as the current user
+
+<Note>
+  The login process times out after 5 minutes. If your browser doesn't open automatically, copy and paste the URL shown in the terminal.
+</Note>
+
+### Example Output
+
+```bash
+$ tailor-sdk login
+Opening browser for login:
+
+https://auth.tailor.tech/oauth2/auth?...
+
+Successfully logged in to Tailor Platform.
+```
+
+## Logout
+
+Revoke your current session and remove credentials:
+
+```bash
+tailor-sdk logout
+```
+
+This command:
+
+1. Revokes your refresh token with the OAuth2 server
+2. Removes your user credentials from the config file
+3. Clears the current user selection
+
+### Example Output
+
+```bash
+$ tailor-sdk logout
+Successfully logged out from Tailor Platform.
+```
+
+<Note>
+  If you're not logged in, the logout command will inform you without raising an error.
+</Note>
+
+## User Management
+
+The CLI supports multiple user accounts and allows you to switch between them.
+
+### Show Current User
+
+Display the currently active user:
+
+```bash
+tailor-sdk user current
+```
+
+**Output:**
+```
+user@example.com
+```
+
+### List All Users
+
+View all authenticated users:
+
+```bash
+tailor-sdk user list
+```
+
+**Output:**
+```json
+[
+  { "email": "user@example.com" },
+  { "email": "admin@company.com" }
+]
+```
+
+### Switch Users
+
+Change the active user without logging out:
+
+```bash
+tailor-sdk user switch admin@company.com
+```
+
+**Output:**
+```
+Current user set to "admin@company.com" successfully.
+```
+
+<Note>
+  The user must already be logged in. Use `tailor-sdk login` to add a new user.
+</Note>
+
+## Personal Access Tokens
+
+Personal Access Tokens (PATs) provide programmatic access without requiring browser-based login. They're ideal for CI/CD pipelines, scripts, and automation.
+
+### List Tokens
+
+View all your personal access tokens:
+
+```bash
+tailor-sdk user pat list
+```
+
+**Output (default):**
+```
+ token-name-1: read/write
+ token-name-2: read
+```
+
+**Output (JSON):**
+```bash
+tailor-sdk user pat list --json
+```
+
+```json
+[
+  { "name": "token-name-1", "scopes": ["read", "write"] },
+  { "name": "token-name-2", "scopes": ["read"] }
+]
+```
+
+### Create a Token
+
+Generate a new personal access token:
+
+<CodeGroup>
+```bash Read-Only (Default)
+tailor-sdk user pat create ci-readonly
+```
+
+```bash Read-Write
+tailor-sdk user pat create ci-deploy --write
+```
+</CodeGroup>
+
+**Options:**
+
+<ParamField path="name" type="string" required>
+  Unique name for the token
+</ParamField>
+
+<ParamField path="--write" type="boolean" default="false">
+  Grant write permissions. Tokens are read-only by default. Short alias: `-W`
+</ParamField>
+
+**Output:**
+```
+Personal access token created successfully.
+
+  name: ci-deploy
+scopes: read/write
+ token: tpp_xxxxxxxxxxxxx
+
+Please save this token in a secure location. You won't be able to see it again.
+```
+
+<Note>
+  Save the token immediately - it will **not** be shown again.
+</Note>
+
+### Update a Token
+
+Rotate a token by deleting and recreating it:
+
+```bash
+tailor-sdk user pat update ci-deploy --write
+```
+
+This generates a new token value while preserving the token name. The old token is immediately revoked.
+
+### Delete a Token
+
+Revoke and remove a personal access token:
+
+```bash
+tailor-sdk user pat delete ci-readonly
+```
+
+## Using Personal Access Tokens
+
+Set the `TAILOR_PLATFORM_TOKEN` environment variable to authenticate:
+
+```bash
+export TAILOR_PLATFORM_TOKEN="tpp_xxxxxxxxxxxxx"
+tailor-sdk apply
+```
+
+In CI/CD pipelines:
+
+<CodeGroup>
+```yaml GitHub Actions
+env:
+  TAILOR_PLATFORM_TOKEN: ${{ secrets.TAILOR_TOKEN }}
+  TAILOR_PLATFORM_WORKSPACE_ID: ${{ vars.WORKSPACE_ID }}
+
+steps:
+  - name: Deploy to Tailor Platform
+    run: |
+      tailor-sdk generate
+      tailor-sdk apply --yes
+```
+
+```yaml GitLab CI
+variables:
+  TAILOR_PLATFORM_TOKEN: $TAILOR_TOKEN
+  TAILOR_PLATFORM_WORKSPACE_ID: $WORKSPACE_ID
+
+deploy:
+  script:
+    - tailor-sdk generate
+    - tailor-sdk apply --yes
+```
+
+```bash CircleCI
+export TAILOR_PLATFORM_TOKEN="${TAILOR_TOKEN}"
+export TAILOR_PLATFORM_WORKSPACE_ID="${WORKSPACE_ID}"
+tailor-sdk apply --yes
+```
+</CodeGroup>
+
+<Note>
+  The deprecated `TAILOR_TOKEN` environment variable is still supported but will show a warning. Migrate to `TAILOR_PLATFORM_TOKEN`.
+</Note>
+
+## Workspace Profiles
+
+Profiles associate a user with a workspace ID, making it easy to switch between development, staging, and production environments.
+
+### Create a Profile
+
+```bash
+tailor-sdk profile create production \
+  --user admin@company.com \
+  --workspace-id abc123-def456-...
+```
+
+**Options:**
+
+<ParamField path="name" type="string" required>
+  Unique profile name (e.g., `dev`, `staging`, `production`)
+</ParamField>
+
+<ParamField path="--user" type="string" required>
+  Email of an authenticated user. Short alias: `-u`
+</ParamField>
+
+<ParamField path="--workspace-id" type="string" required>
+  Workspace ID to associate with this profile. Short alias: `-w`
+</ParamField>
+
+**Output:**
+```
+Profile "production" created successfully.
+```
+
+### List Profiles
+
+View all configured profiles:
+
+```bash
+tailor-sdk profile list
+```
+
+**Output:**
+```json
+[
+  {
+    "name": "dev",
+    "user": "user@example.com",
+    "workspaceId": "dev-workspace-id"
+  },
+  {
+    "name": "production",
+    "user": "admin@company.com",
+    "workspaceId": "prod-workspace-id"
+  }
+]
+```
+
+### Update a Profile
+
+Change the user or workspace ID associated with a profile:
+
+```bash
+tailor-sdk profile update production \
+  --workspace-id new-workspace-id
+```
+
+### Delete a Profile
+
+Remove a profile configuration:
+
+```bash
+tailor-sdk profile delete staging
+```
+
+### Using Profiles
+
+Specify a profile with the `--profile` flag:
+
+```bash
+tailor-sdk apply --profile production
+```
+
+Or set the default profile via environment variable:
+
+```bash
+export TAILOR_PLATFORM_PROFILE="production"
+tailor-sdk apply
+```
+
+Profiles automatically provide both the workspace ID and authentication token, eliminating the need to specify them separately.
+
+## Machine Users
+
+Machine users are service accounts defined in your application's Auth configuration. They provide scoped access tokens for server-to-server communication.
+
+### List Machine Users
+
+View machine users defined in your application:
+
+```bash
+tailor-sdk machineuser list --profile production
+```
+
+### Get Machine User Token
+
+Retrieve an access token for a machine user:
+
+```bash
+tailor-sdk machineuser token backend-service --profile production
+```
+
+**Output:**
+```json
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "Bearer",
+  "expires_at": "2026-03-03T12:34:56Z"
+}
+```
+
+<Note>
+  Machine users must be defined in your `tailor.config.ts` Auth configuration and deployed before you can retrieve tokens.
+</Note>
+
+Use machine user tokens in your application code:
+
+```typescript
+const response = await fetch('https://your-app.tailor.tech/api/data', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+```
+
+## Token Refresh
+
+The CLI automatically refreshes expired access tokens using stored refresh tokens. This happens transparently when you run commands.
+
+If token refresh fails (e.g., refresh token expired):
+
+```
+Failed to refresh token. Your session may have expired.
+Please run 'tailor-sdk login' and try again.
+```
+
+Simply log in again to re-authenticate.
+
+## Authentication Priority
+
+When multiple authentication methods are available, the CLI follows this priority:
+
+1. `TAILOR_PLATFORM_TOKEN` environment variable (highest priority)
+2. `TAILOR_TOKEN` environment variable (deprecated)
+3. Profile specified via `--profile` or `TAILOR_PLATFORM_PROFILE`
+4. Current user from `~/.config/tailor-platform/config.yaml`
+
+<CodeGroup>
+```bash Environment Token (Priority 1)
+export TAILOR_PLATFORM_TOKEN="tpp_xxxxxxxxxxxxx"
+tailor-sdk apply  # Uses environment token
+```
+
+```bash Profile (Priority 3)
+tailor-sdk apply --profile production  # Uses profile's user token
+```
+
+```bash Current User (Priority 4)
+tailor-sdk login
+tailor-sdk apply  # Uses logged-in user token
+```
+</CodeGroup>
+
+## Security Best Practices
+
+<Note>
+  - **Never** commit tokens to version control
+  - Use CI/CD secret management for `TAILOR_PLATFORM_TOKEN`
+  - Rotate personal access tokens regularly
+  - Use read-only tokens when write access isn't needed
+  - Use profiles for local development, tokens for CI/CD
+  - Store `config.yaml` with restricted permissions (600)
+</Note>
+
+## Configuration File Structure
+
+Credentials are stored in `~/.config/tailor-platform/config.yaml`:
+
+```yaml
+version: 1
+current_user: user@example.com
+
+users:
+  user@example.com:
+    access_token: eyJhbGc...
+    refresh_token: eyJhbGc...
+    token_expires_at: '2026-03-10T12:34:56Z'
+  admin@company.com:
+    access_token: eyJhbGc...
+    refresh_token: eyJhbGc...
+    token_expires_at: '2026-03-10T12:34:56Z'
+
+profiles:
+  dev:
+    user: user@example.com
+    workspace_id: dev-workspace-id
+  production:
+    user: admin@company.com
+    workspace_id: prod-workspace-id
+```
+
+<Note>
+  The CLI automatically migrates legacy `~/.tailorctl/config` files to the new format.
+</Note>
+
+## Troubleshooting
+
+### Login Browser Not Opening
+
+If the browser doesn't open automatically:
+
+1. Copy the URL from the terminal
+2. Paste it into your browser manually
+3. Complete the login flow
+
+### Port 8085 Already in Use
+
+If port 8085 is occupied, the login will fail. Stop the conflicting process or wait for it to release the port.
+
+### Profile Not Found
+
+Ensure the profile exists:
+
+```bash
+tailor-sdk profile list
+```
+
+Create it if missing:
+
+```bash
+tailor-sdk profile create <name> --user <email> --workspace-id <id>
+```
+
+### User Not Found
+
+Ensure you're logged in:
+
+```bash
+tailor-sdk user list
+```
+
+Log in if needed:
+
+```bash
+tailor-sdk login
+```
+
+## Next Steps
+
+- Deploy your application with [Application Commands](/cli/apply)
+- Manage databases with [TailorDB Commands](/cli/tailordb-migration)
+- Create and manage workspaces (see authentication section above)

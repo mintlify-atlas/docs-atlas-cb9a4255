@@ -1,0 +1,401 @@
+---
+title: "Permissions"
+description: "Configure access control for TailorDB types"
+---
+
+TailorDB uses a **secure-by-default** permission system. All operations are denied unless explicitly allowed through permission configuration.
+
+## Permission Levels
+
+TailorDB has two levels of permissions:
+
+1. **Record-level permissions** (`.permission()`) - Controls CRUD operations on individual records
+2. **GraphQL permissions** (`.gqlPermission()`) - Controls access to GraphQL operations and queries
+
+## Record-Level Permissions
+
+Record-level permissions control create, read, update, and delete operations on individual records.
+
+### Basic Syntax
+
+```typescript
+.permission({
+  create: [conditions],
+  read: [conditions],
+  update: [conditions],
+  delete: [conditions],
+})
+```
+
+<ParamField path="create" type="ActionPermission[]" required>
+  Array of permission conditions for creating records.
+</ParamField>
+
+<ParamField path="read" type="ActionPermission[]" required>
+  Array of permission conditions for reading records.
+</ParamField>
+
+<ParamField path="update" type="ActionPermission[]" required>
+  Array of permission conditions for updating records. Use `newRecord` and `oldRecord` operands.
+</ParamField>
+
+<ParamField path="delete" type="ActionPermission[]" required>
+  Array of permission conditions for deleting records.
+</ParamField>
+
+### Permission Conditions
+
+Conditions are expressed as tuples comparing operands:
+
+```typescript
+[leftOperand, operator, rightOperand]
+```
+
+**Operands**:
+- `{ user: "fieldName" }` - User attribute (from auth config)
+- `{ user: "_loggedIn" }` - Special: is user logged in?
+- `{ user: "id" }` - User ID
+- `{ record: "fieldName" }` - Record field value
+- `{ newRecord: "fieldName" }` - New record value (update only)
+- `{ oldRecord: "fieldName" }` - Old record value (update only)
+- Literal values: strings, booleans, arrays
+
+**Operators**:
+- `"="`, `"!="` - Equality/inequality
+- `"in"`, `"not in"` - Contains in array
+- `"hasAny"`, `"not hasAny"` - Arrays have any common elements
+
+### Object Format (Recommended)
+
+Use the object format for better readability:
+
+```typescript
+{
+  conditions: [[{ user: "role" }, "=", "admin"]],
+  permit: true,
+  description: "Allow admins to perform this action",
+}
+```
+
+### Example: Role-Based Permissions
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import type { TailorTypePermission, TailorTypeGqlPermission } from "@tailor-platform/sdk";
+
+const adminOnly = [
+  { user: "role" },
+  "=",
+  "MANAGER",
+] as const;
+
+const loggedIn = [
+  { user: "_loggedIn" },
+  "=",
+  true,
+] as const;
+
+export const defaultPermission: TailorTypePermission = {
+  create: [adminOnly],
+  read: [adminOnly, loggedIn], // Admin OR logged in
+  update: [adminOnly],
+  delete: [adminOnly],
+};
+
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(),
+  role: db.enum(["MANAGER", "STAFF"]),
+  ...db.fields.timestamps(),
+})
+  .permission(defaultPermission);
+```
+
+**How it works**:
+- Managers can create, read, update, and delete
+- Any logged-in user can read
+- Staff members cannot create, update, or delete
+
+### Example: Owner-Based Permissions
+
+```typescript
+export const document = db.type("Document", {
+  title: db.string(),
+  ownerId: db.uuid(),
+  isPublic: db.bool(),
+})
+  .permission({
+    create: [{ conditions: [[{ user: "_loggedIn" }, "=", true]], permit: true }],
+    read: [
+      { conditions: [[{ record: "isPublic" }, "=", true]], permit: true },
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+    ],
+    update: [
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+    ],
+    delete: [
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+    ],
+  });
+```
+
+**How it works**:
+- Any logged-in user can create documents
+- Anyone can read public documents
+- Only owners can read their private documents
+- Only owners can update or delete their documents
+
+### Example: Update with Old/New Record
+
+For update operations, use `oldRecord` and `newRecord` to compare values:
+
+```typescript
+export const article = db.type("Article", {
+  title: db.string(),
+  status: db.enum(["draft", "published"]),
+  authorId: db.uuid(),
+})
+  .permission({
+    create: [{ conditions: [[{ user: "_loggedIn" }, "=", true]], permit: true }],
+    read: [{ conditions: [], permit: true }], // Public read
+    update: [
+      // Author can update their own drafts
+      {
+        conditions: [
+          [{ oldRecord: "authorId" }, "=", { user: "id" }],
+          [{ oldRecord: "status" }, "=", "draft"],
+        ],
+        permit: true,
+      },
+      // Admin can update anything
+      {
+        conditions: [[{ user: "role" }, "=", "admin"]],
+        permit: true,
+      },
+    ],
+    delete: [
+      { conditions: [[{ user: "role" }, "=", "admin"]], permit: true },
+    ],
+  });
+```
+
+## GraphQL Permissions
+
+GraphQL permissions control access to GraphQL operations and queries.
+
+### Basic Syntax
+
+```typescript
+.gqlPermission([
+  {
+    conditions: [[{ user: "role" }, "=", "admin"]],
+    actions: ["create", "read", "update", "delete", "aggregate", "bulkUpsert"],
+    permit: true,
+  },
+])
+```
+
+<ParamField path="conditions" type="PermissionCondition[]" required>
+  Array of conditions that must be met.
+</ParamField>
+
+<ParamField path="actions" type="'all' | GqlPermissionAction[]" required>
+  Which GraphQL operations to allow. Use `"all"` for all operations or specify individual actions.
+</ParamField>
+
+<ParamField path="permit" type="boolean" default={true}>
+  Whether to permit (`true`) or deny (`false`) access.
+</ParamField>
+
+**Available actions**:
+- `"read"` - Query operations (get, list)
+- `"create"` - Create mutations
+- `"update"` - Update mutations
+- `"delete"` - Delete mutations
+- `"aggregate"` - Aggregation queries
+- `"bulkUpsert"` - Bulk upsert operations
+- `"all"` - All of the above
+
+### Example: Role-Based GraphQL Permissions
+
+```typescript
+const adminCondition = [{ user: "role" }, "=", "MANAGER"] as const;
+const loggedInCondition = [{ user: "_loggedIn" }, "=", true] as const;
+
+export const defaultGqlPermission: TailorTypeGqlPermission = [
+  {
+    conditions: [adminCondition],
+    actions: ["create", "read", "update", "delete", "aggregate", "bulkUpsert"],
+    permit: true,
+  },
+  {
+    conditions: [loggedInCondition],
+    actions: ["read"],
+    permit: true,
+  },
+];
+
+export const user = db.type("User", {
+  name: db.string(),
+  role: db.enum(["MANAGER", "STAFF"]),
+})
+  .permission(defaultPermission)
+  .gqlPermission(defaultGqlPermission);
+```
+
+**How it works**:
+- Managers can perform all GraphQL operations
+- Logged-in users can only perform read queries
+- Non-logged-in users cannot access any operations
+
+## Complete Example
+
+Here's a complete example with both permission types:
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import type {
+  PermissionCondition,
+  TailorTypePermission,
+  TailorTypeGqlPermission,
+} from "@tailor-platform/sdk";
+
+const adminCondition = [
+  { user: "role" },
+  "=",
+  "MANAGER",
+] as const satisfies PermissionCondition;
+
+const loggedInCondition = [
+  { user: "_loggedIn" },
+  "=",
+  true,
+] as const satisfies PermissionCondition;
+
+const permission: TailorTypePermission = {
+  create: [adminCondition],
+  read: [adminCondition, loggedInCondition],
+  update: [adminCondition],
+  delete: [adminCondition],
+};
+
+const gqlPermission: TailorTypeGqlPermission = [
+  {
+    conditions: [adminCondition],
+    actions: ["create", "read", "update", "delete", "aggregate", "bulkUpsert"],
+    permit: true,
+  },
+  {
+    conditions: [loggedInCondition],
+    actions: ["read"],
+    permit: true,
+  },
+];
+
+export const customer = db.type("Customer", {
+  name: db.string(),
+  email: db.string(),
+  country: db.string(),
+  ...db.fields.timestamps(),
+})
+  .permission(permission)
+  .gqlPermission(gqlPermission);
+```
+
+## User Attributes in Permissions
+
+User attributes come from your auth configuration:
+
+```typescript
+// tailor.config.ts
+export const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    attributes: {
+      role: true,      // Available as { user: "role" }
+      department: true, // Available as { user: "department" }
+    },
+  },
+});
+```
+
+These attributes are automatically typed and available in permission conditions.
+
+**Built-in user attributes**:
+- `{ user: "id" }` - User ID (always available)
+- `{ user: "_loggedIn" }` - Whether user is logged in (always available)
+
+## Development Helpers
+
+For local development and testing, you can use unsafe helpers that grant full access:
+
+```typescript
+import {
+  db,
+  unsafeAllowAllTypePermission,
+  unsafeAllowAllGqlPermission,
+} from "@tailor-platform/sdk";
+
+export const user = db.type("User", {
+  name: db.string(),
+})
+  .permission(unsafeAllowAllTypePermission)
+  .gqlPermission(unsafeAllowAllGqlPermission);
+```
+
+**Warning**: Do **NOT** use these in production. They disable all authorization checks.
+
+## Permission Evaluation
+
+Permissions are evaluated as follows:
+
+1. **All conditions must match**: Within a single permission object, all conditions must be true (AND logic)
+2. **Any permission can grant access**: Multiple permissions are evaluated with OR logic
+3. **First match wins**: The first matching permission determines access
+4. **Default deny**: If no permissions match, access is denied
+
+### Example: Complex Permissions
+
+```typescript
+export const project = db.type("Project", {
+  name: db.string(),
+  ownerId: db.uuid(),
+  teamIds: db.uuid({ array: true }),
+  isPublic: db.bool(),
+})
+  .permission({
+    create: [{ conditions: [[{ user: "_loggedIn" }, "=", true]], permit: true }],
+    read: [
+      // Public projects
+      { conditions: [[{ record: "isPublic" }, "=", true]], permit: true },
+      // Owner
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+      // Team member
+      { conditions: [[{ user: "id" }, "in", { record: "teamIds" }]], permit: true },
+    ],
+    update: [
+      // Only owner can update
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+    ],
+    delete: [
+      // Only owner can delete
+      { conditions: [[{ record: "ownerId" }, "=", { user: "id" }]], permit: true },
+    ],
+  });
+```
+
+## Best Practices
+
+1. **Start restrictive**: Begin with minimal permissions and add access as needed
+2. **Use typed conditions**: Import `PermissionCondition` type and use `satisfies` for type safety
+3. **Reuse permission configs**: Define common permissions once and reuse across types
+4. **Test permissions**: Always test permission logic with different user roles
+5. **Document complex rules**: Use the `description` field for complex permission logic
+6. **Avoid unsafe helpers in production**: Never deploy with `unsafeAllowAll*` permissions
+
+## See Also
+
+- [db.type()](/api/db-type) - Defining types
+- [Field Types](/api/db-fields) - Available fields
+- [Relations](/api/db-relations) - Foreign keys and relations
+- [TailorDB Permission Guide](https://docs.tailor.tech/guides/tailordb/permission) - Official documentation

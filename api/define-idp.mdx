@@ -1,0 +1,210 @@
+---
+title: "defineIdp"
+description: "Define an Identity Provider service for Tailor Platform SDK"
+---
+
+## Function Signature
+
+```typescript
+function defineIdp<const TClients extends string[]>(
+  name: string,
+  config: Omit<IdPInput, "name" | "clients"> & { clients: TClients }
+): DefinedIdp<string, IdPInput, TClients[number]>
+```
+
+Defines an Identity Provider (IdP) service configuration with type-safe client references.
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  IdP service name
+</ParamField>
+
+<ParamField path="config" type="IdPInput" required>
+  IdP configuration object
+  
+  <ParamField path="authorization" type="'insecure' | 'loggedIn' | { cel: string }" required>
+    Authorization policy for IdP operations:
+    - `"insecure"`: No authorization required (development only)
+    - `"loggedIn"`: Require authenticated user
+    - `{ cel: string }`: Custom CEL expression for authorization
+  </ParamField>
+  
+  <ParamField path="clients" type="string[]" required>
+    Array of client names allowed to use this IdP
+  </ParamField>
+  
+  <ParamField path="lang" type="'en' | 'ja'">
+    Default language for IdP UI and messages
+  </ParamField>
+  
+  <ParamField path="userAuthPolicy" type="IdPUserAuthPolicy">
+    User authentication policy configuration
+    
+    <ParamField path="useNonEmailIdentifier" type="boolean">
+      Allow non-email identifiers for usernames
+    </ParamField>
+    
+    <ParamField path="allowSelfPasswordReset" type="boolean">
+      Allow users to reset their own passwords
+    </ParamField>
+    
+    <ParamField path="passwordRequireUppercase" type="boolean">
+      Require at least one uppercase letter in passwords
+    </ParamField>
+    
+    <ParamField path="passwordRequireLowercase" type="boolean">
+      Require at least one lowercase letter in passwords
+    </ParamField>
+    
+    <ParamField path="passwordRequireNonAlphanumeric" type="boolean">
+      Require at least one non-alphanumeric character in passwords
+    </ParamField>
+    
+    <ParamField path="passwordRequireNumeric" type="boolean">
+      Require at least one numeric digit in passwords
+    </ParamField>
+    
+    <ParamField path="passwordMinLength" type="number">
+      Minimum password length (6-30, inclusive)
+    </ParamField>
+    
+    <ParamField path="passwordMaxLength" type="number">
+      Maximum password length (6-4096, inclusive)
+    </ParamField>
+    
+    <ParamField path="allowedEmailDomains" type="string[]">
+      Restrict registration to specific email domains. Cannot be used with `useNonEmailIdentifier`
+    </ParamField>
+    
+    <ParamField path="allowGoogleOauth" type="boolean">
+      Enable Google OAuth authentication. Requires `allowedEmailDomains` to be set
+    </ParamField>
+    
+    <ParamField path="disablePasswordAuth" type="boolean">
+      Disable password authentication (OAuth only). Requires `allowGoogleOauth` to be enabled
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="publishUserEvents" type="boolean">
+    Enable publishing user lifecycle events (created, updated, deleted)
+  </ParamField>
+  
+  <ParamField path="gqlOperations" type="IdPGqlOperationsConfig">
+    Configure which GraphQL operations are enabled for IdP users:
+    - `"query"`: Alias for read-only mode (disables all mutations)
+    - Object with boolean flags for each operation:
+      - `create`: Enable `_createUser` mutation
+      - `update`: Enable `_updateUser` mutation
+      - `delete`: Enable `_deleteUser` mutation
+      - `read`: Enable `_users` and `_user` queries
+      - `sendPasswordResetEmail`: Enable `_sendPasswordResetEmail` mutation
+    
+    All operations are enabled by default (undefined or true = enabled, false = disabled)
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="idp" type="DefinedIdp">
+  Defined IdP service with the following properties:
+  
+  <ResponseField name="name" type="string">
+    IdP service name
+  </ResponseField>
+  
+  <ResponseField name="provider" type="function">
+    Method to create an identity provider configuration:
+    
+    ```typescript
+    provider(providerName: string, clientName: TClients[number]): BuiltinIdP
+    ```
+    
+    Returns an object with:
+    - `name`: Provider name
+    - `kind`: `"BuiltInIdP"`
+    - `namespace`: IdP service name
+    - `clientName`: Client name
+  </ResponseField>
+  
+  All other fields from the input config are preserved.
+</ResponseField>
+
+## Example
+
+### Basic Configuration
+
+```typescript
+import { defineIdp } from "@tailor-platform/sdk";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+  userAuthPolicy: {
+    useNonEmailIdentifier: false,
+    allowSelfPasswordReset: true,
+    passwordRequireUppercase: true,
+    passwordRequireLowercase: true,
+    passwordRequireNonAlphanumeric: true,
+    passwordRequireNumeric: true,
+    passwordMinLength: 8,
+    passwordMaxLength: 128,
+  },
+});
+```
+
+### With Google OAuth
+
+```typescript
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["web-client", "mobile-client"],
+  userAuthPolicy: {
+    allowedEmailDomains: ["example.com", "company.com"],
+    allowGoogleOauth: true,
+    passwordMinLength: 12,
+  },
+});
+```
+
+### Read-Only GraphQL Operations
+
+```typescript
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+  gqlOperations: "query", // Disables all mutations
+});
+```
+
+### Using Provider Method
+
+```typescript
+import { defineAuth, defineIdp } from "@tailor-platform/sdk";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+  },
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+```
+
+## Notes
+
+- The `clients` array is type-checked when using the `.provider()` method
+- Password constraints are validated:
+  - `passwordMinLength` must be ≤ `passwordMaxLength`
+  - `passwordMinLength` must be between 6 and 30
+  - `passwordMaxLength` must be between 6 and 4096
+- `allowedEmailDomains` cannot be used with `useNonEmailIdentifier`
+- `allowGoogleOauth` requires `allowedEmailDomains` to be set
+- `disablePasswordAuth` requires `allowGoogleOauth` to be enabled
+- `disablePasswordAuth` cannot be used with `allowSelfPasswordReset`
+- The `.provider()` method is used to link the IdP to an auth service

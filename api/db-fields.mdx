@@ -1,0 +1,418 @@
+---
+title: "Field Types"
+description: "Available field types and modifiers in TailorDB"
+---
+
+TailorDB provides a comprehensive set of field types for defining your data schema. All fields are type-safe and automatically validated.
+
+## Basic Field Types
+
+<Tabs>
+  <Tab title="String">
+    ```typescript
+    db.string()
+    db.string({ optional: true })
+    db.string({ array: true })
+    ```
+    
+    String field mapped to TypeScript `string`.
+  </Tab>
+  
+  <Tab title="Integer">
+    ```typescript
+    db.int()
+    db.int({ optional: true })
+    db.int({ array: true })
+    ```
+    
+    Integer field mapped to TypeScript `number`. Only whole numbers are valid.
+  </Tab>
+  
+  <Tab title="Float">
+    ```typescript
+    db.float()
+    db.float({ optional: true })
+    ```
+    
+    Floating-point number field mapped to TypeScript `number`.
+  </Tab>
+  
+  <Tab title="Boolean">
+    ```typescript
+    db.bool()
+    db.bool({ optional: true })
+    ```
+    
+    Boolean field mapped to TypeScript `boolean`.
+  </Tab>
+</Tabs>
+
+## Date and Time Fields
+
+<Tabs>
+  <Tab title="Date">
+    ```typescript
+    db.date()
+    db.date({ optional: true })
+    ```
+    
+    Date-only field (no time component).
+    
+    **Format**: `"yyyy-MM-dd"` (e.g., `"2024-03-15"`)
+    
+    **TypeScript Type**: `string`
+  </Tab>
+  
+  <Tab title="DateTime">
+    ```typescript
+    db.datetime()
+    db.datetime({ optional: true })
+    ```
+    
+    Date and time field.
+    
+    **Format**: ISO 8601 `"yyyy-MM-ddTHH:mm:ssZ"` (e.g., `"2024-03-15T14:30:00Z"`)
+    
+    **TypeScript Type**: `string | Date`
+  </Tab>
+  
+  <Tab title="Time">
+    ```typescript
+    db.time()
+    db.time({ optional: true })
+    ```
+    
+    Time-only field (no date component).
+    
+    **Format**: `"HH:mm"` (e.g., `"14:30"`)
+    
+    **TypeScript Type**: `string`
+  </Tab>
+</Tabs>
+
+## Special Field Types
+
+### UUID
+
+```typescript
+db.uuid()
+db.uuid({ optional: true })
+```
+
+Universally unique identifier field. Commonly used for foreign keys.
+
+**Format**: Standard UUID `"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"`
+
+**TypeScript Type**: `string`
+
+### Enum
+
+Enum fields restrict values to a predefined set of strings:
+
+```typescript
+// Simple enum
+db.enum(["red", "green", "blue"])
+
+// With descriptions
+db.enum([
+  { value: "active", description: "Active status" },
+  { value: "inactive", description: "Inactive status" },
+])
+
+// Optional enum
+db.enum(["MANAGER", "STAFF"], { optional: true })
+```
+
+**Example from source**:
+
+```typescript
+export const user = db.type("User", {
+  role: db.enum(["MANAGER", "STAFF"]),
+  status: db.string({ optional: true }),
+});
+
+export const supplier = db.type("Supplier", {
+  state: db.enum(["Alabama", "Alaska"]),
+});
+```
+
+### Object (Nested Fields)
+
+Define structured nested objects with typed fields:
+
+```typescript
+db.object({
+  street: db.string(),
+  city: db.string(),
+  country: db.string(),
+})
+
+// Optional object
+db.object({
+  name: db.string(),
+  age: db.int({ optional: true }),
+}, { optional: true })
+
+// Array of objects
+db.object({
+  id: db.uuid(),
+  name: db.string(),
+}, { array: true })
+```
+
+**Example from source**:
+
+```typescript
+export const attachedFiles = db.object(
+  {
+    id: db.uuid(),
+    name: db.string(),
+    size: db.int().validate(({ value }) => value > 0),
+    type: db.enum(["text", "image"]),
+  },
+  { array: true },
+);
+
+export const nestedProfile = db.type("NestedProfile", {
+  userInfo: db
+    .object({
+      name: db.string().description("User's full name"),
+      age: db.int({ optional: true }).description("User's age"),
+      bio: db.string({ optional: true }).description("User's biography"),
+      email: db.string().description("User's email address"),
+      phone: db.string({ optional: true }).description("User's phone number"),
+    })
+    .description("User information"),
+  metadata: db
+    .object({
+      created: db.datetime().description("Creation timestamp"),
+      lastUpdated: db.datetime({ optional: true }).description("Last update timestamp"),
+      version: db.int().description("Version number"),
+    })
+    .description("Profile metadata"),
+});
+```
+
+### Decimal
+
+High-precision decimal numbers stored as strings:
+
+```typescript
+db.decimal()
+db.decimal({ scale: 2 }) // 2 decimal places
+db.decimal({ scale: 4, optional: true }) // 4 decimal places, optional
+```
+
+**Parameters**:
+- `scale`: Integer between 0 and 12 specifying decimal places
+
+**TypeScript Type**: `string`
+
+## Field Options
+
+All field types accept these options:
+
+<ParamField path="optional" type="boolean" default={false}>
+  If `true`, the field can be `null` or `undefined`.
+</ParamField>
+
+<ParamField path="array" type="boolean" default={false}>
+  If `true`, the field accepts an array of values.
+</ParamField>
+
+```typescript
+db.string({ optional: true })
+db.string({ array: true })
+db.string({ optional: true, array: true }) // Optional array of strings
+db.int({ optional: true })
+db.uuid({ array: true })
+```
+
+## Field Modifiers
+
+Field modifiers are chained methods that add additional behavior to fields.
+
+### Description
+
+Add documentation to a field:
+
+```typescript
+db.string().description("User's full name")
+db.int().description("Age in years")
+```
+
+### Index
+
+Create a database index on the field for faster queries:
+
+```typescript
+db.string().index()
+db.enum(["MANAGER", "STAFF"]).index()
+```
+
+**Note**: Cannot be used on array fields.
+
+### Unique
+
+Enforce uniqueness constraint (automatically adds an index):
+
+```typescript
+db.string().unique()
+db.int().unique()
+```
+
+**Example**:
+
+```typescript
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(), // Email must be unique
+});
+```
+
+### Vector Search
+
+Enable vector search on string fields:
+
+```typescript
+db.string().vector()
+```
+
+**Note**: Only available on non-array string fields.
+
+### Serial / Auto-increment
+
+Generate auto-incrementing values:
+
+```typescript
+// Integer serial
+db.int().serial({
+  start: 1,
+  maxValue: 999999,
+})
+
+// String serial with format
+db.string().serial({
+  start: 1000,
+  format: "INV-%05d", // Generates INV-01000, INV-01001, etc.
+})
+```
+
+**Example from source**:
+
+```typescript
+export const invoice = db.type("Invoice", {
+  invoiceNumber: db.string().serial({
+    start: 1000,
+    format: "INV-%05d",
+  }),
+  sequentialId: db.int().serial({
+    start: 1,
+    maxValue: 999999,
+  }),
+});
+```
+
+## Common Field Patterns
+
+### Timestamps
+
+Use `db.fields.timestamps()` to add standard `createdAt` and `updatedAt` fields:
+
+```typescript
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string(),
+  ...db.fields.timestamps(),
+});
+```
+
+This expands to:
+
+```typescript
+{
+  createdAt: db.datetime()
+    .hooks({ create: () => new Date() })
+    .description("Record creation timestamp"),
+  updatedAt: db.datetime({ optional: true })
+    .hooks({ update: () => new Date() })
+    .description("Record last update timestamp"),
+}
+```
+
+### Validation
+
+Add validation rules to fields:
+
+```typescript
+// Single validator (function form)
+db.int().validate(({ value }) => value >= 0)
+
+// Multiple validators with error messages (recommended)
+db.string().validate(
+  ({ value }) => value.includes("@"),
+  [({ value }) => value.length >= 5, "Email must be at least 5 characters"],
+)
+
+// Nested field validation
+db.object({
+  size: db.int().validate(({ value }) => value > 0),
+})
+```
+
+**Example from source**:
+
+```typescript
+export const customer = db.type("Customer", {
+  city: db.string({ optional: true }).validate(
+    ({ value }) => (value ? value.length > 1 : true),
+    ({ value }) => (value ? value.length < 100 : true),
+  ),
+});
+```
+
+### Hooks
+
+Execute functions during create or update operations:
+
+```typescript
+// Field-level hooks
+db.string().hooks({
+  create: ({ user }) => user.id,
+  update: ({ value }) => value,
+})
+
+db.datetime().hooks({
+  create: () => new Date(),
+  update: () => new Date(),
+})
+```
+
+**Hook arguments**:
+- `value`: User input if provided, otherwise existing value (update) or null (create)
+- `data`: Entire record data (for accessing other fields)
+- `user`: User performing the operation
+
+**Note**: For type-safe access to other fields, use type-level hooks instead (see [db.type()](/api/db-type)).
+
+## Field Type Reference
+
+| Method | TailorDB Type | TypeScript Type | Notes |
+|--------|---------------|-----------------|-------|
+| `db.string()` | String | `string` | |
+| `db.int()` | Integer | `number` | Whole numbers only |
+| `db.float()` | Float | `number` | Decimal numbers |
+| `db.bool()` | Boolean | `boolean` | |
+| `db.date()` | Date | `string` | Format: `yyyy-MM-dd` |
+| `db.datetime()` | DateTime | `string \| Date` | ISO 8601 format |
+| `db.time()` | Time | `string` | Format: `HH:mm` |
+| `db.uuid()` | UUID | `string` | Standard UUID format |
+| `db.decimal()` | Decimal | `string` | High-precision decimals |
+| `db.enum()` | Enum | `string` | Restricted values |
+| `db.object()` | Nested | `object` | Structured data |
+
+## See Also
+
+- [db.type()](/api/db-type) - Defining types
+- [Relations](/api/db-relations) - Foreign keys and relations
+- [Permissions](/api/db-permissions) - Field-level access control

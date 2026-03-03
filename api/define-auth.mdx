@@ -1,0 +1,197 @@
+---
+title: "defineAuth"
+description: "Define an authentication service for Tailor Platform SDK"
+---
+
+## Function Signature
+
+### With User Profile
+
+```typescript
+function defineAuth<
+  const Name extends string,
+  const User extends TailorDBInstance,
+  const AttributeMap extends UserAttributeMap<User>,
+  const AttributeList extends UserAttributeListKey<User>[],
+  const MachineUserNames extends string,
+>(
+  name: Name,
+  config: UserProfileAuthInput<User, AttributeMap, AttributeList, MachineUserNames>
+): DefinedAuth<Name, UserProfileAuthInput<...>, MachineUserNames>
+```
+
+### Machine Users Only
+
+```typescript
+function defineAuth<
+  const Name extends string,
+  const MachineUserAttributes extends MachineUserAttributeFields,
+  const MachineUserNames extends string,
+>(
+  name: Name,
+  config: MachineUserOnlyAuthInput<MachineUserNames, MachineUserAttributes>
+): DefinedAuth<Name, MachineUserOnlyAuthInput<...>, MachineUserNames>
+```
+
+Defines an authentication service with either user profiles or machine users.
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  Auth service name
+</ParamField>
+
+<ParamField path="config" type="AuthServiceInput" required>
+  Auth service configuration object
+  
+  <ParamField path="userProfile" type="object">
+    User profile configuration (mutually exclusive with `machineUserAttributes`)
+    
+    <ParamField path="namespace" type="string">
+      TailorDB namespace where the user type is defined. Usually auto-resolved; required only when multiple TailorDBs exist and the type is in an external TailorDB
+    </ParamField>
+    
+    <ParamField path="type" type="TailorDBInstance" required>
+      TailorDB type representing the user
+    </ParamField>
+    
+    <ParamField path="usernameField" type="UsernameFieldKey<User>" required>
+      Field name to use as username. Must be a required, unique, non-array string field
+    </ParamField>
+    
+    <ParamField path="attributes" type="UserAttributeMap<User>">
+      Map of user attributes to expose. Keys are field names with `true` values
+    </ParamField>
+    
+    <ParamField path="attributeList" type="UserAttributeListKey<User>[]">
+      Array of UUID field names to expose as attribute lists
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="machineUserAttributes" type="MachineUserAttributeFields">
+    Machine user attribute fields (mutually exclusive with `userProfile`). Record of field definitions
+  </ParamField>
+  
+  <ParamField path="machineUsers" type="Record<string, MachineUser>">
+    Machine user configurations, keyed by machine user name
+    
+    <ParamField path="[name].attributes" type="object">
+      Attribute values for the machine user
+    </ParamField>
+    
+    <ParamField path="[name].attributeList" type="string[]">
+      Attribute list values for the machine user
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="oauth2Clients" type="Record<string, OAuth2Client>">
+    OAuth2 client configurations, keyed by client name
+    
+    <ParamField path="[name].redirectURIs" type="string[]" required>
+      Allowed redirect URIs for OAuth2 flow
+    </ParamField>
+    
+    <ParamField path="[name].description" type="string">
+      Client description
+    </ParamField>
+    
+    <ParamField path="[name].grantTypes" type="OAuth2ClientGrantType[]">
+      Allowed OAuth2 grant types (e.g., `"authorization_code"`, `"refresh_token"`)
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="idProvider" type="IdProviderConfig">
+    Identity provider configuration. Use the `.provider()` method from `defineIdp`
+  </ParamField>
+  
+  <ParamField path="scim" type="SCIMConfig">
+    SCIM configuration for user provisioning
+  </ParamField>
+  
+  <ParamField path="tenantProvider" type="TenantProviderConfig">
+    Tenant provider configuration
+  </ParamField>
+  
+  <ParamField path="publishSessionEvents" type="boolean">
+    Enable publishing session events (token issued, refreshed, revoked)
+  </ParamField>
+</ParamField>
+
+## Returns
+
+<ResponseField name="auth" type="DefinedAuth">
+  Defined auth service with the following properties:
+  
+  <ResponseField name="name" type="string">
+    Auth service name
+  </ResponseField>
+  
+  <ResponseField name="invoker" type="function">
+    Method to create an auth invoker for machine users:
+    
+    ```typescript
+    invoker<M extends MachineUserNames>(machineUser: M): AuthInvoker<M>
+    ```
+    
+    Returns an object with `{ namespace: string, machineUserName: M }` compatible with `tailor.v1.AuthInvoker`
+  </ResponseField>
+  
+  All other fields from the input config are preserved.
+</ResponseField>
+
+## Example
+
+### With User Profile
+
+```typescript
+import { defineAuth, defineIdp } from "@tailor-platform/sdk";
+import { user } from "./tailordb/user";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+    attributes: {
+      role: true,
+    },
+  },
+  machineUsers: {
+    "manager-machine-user": {
+      attributes: {
+        role: "MANAGER",
+      },
+    },
+  },
+  oauth2Clients: {
+    sample: {
+      redirectURIs: ["https://example.com/callback"],
+      description: "Sample OAuth2 client",
+      grantTypes: ["authorization_code", "refresh_token"],
+    },
+  },
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+```
+
+### Using Auth Invoker
+
+```typescript
+// In an executor or workflow
+const invoker = auth.invoker("manager-machine-user");
+// invoker = { namespace: "my-auth", machineUserName: "manager-machine-user" }
+```
+
+## Notes
+
+- You must provide either `userProfile` or `machineUserAttributes`, not both
+- The function validates this constraint at runtime and throws an error if both are provided
+- When using `userProfile`, the `usernameField` must reference a required, unique, non-array string field from the user type
+- The `attributes` map exposes specific user fields as auth attributes (supports string, boolean, and array types)
+- The `attributeList` array exposes UUID fields as attribute lists
+- Machine users are useful for service-to-service authentication
+- The `.invoker()` method provides a type-safe way to reference machine users in your code

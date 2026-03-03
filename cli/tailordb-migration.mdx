@@ -1,0 +1,471 @@
+---
+title: tailordb migration
+description: Manage TailorDB schema migrations with automatic diff detection and data transformations
+---
+
+<Warning>
+TailorDB migrations are currently in beta and may introduce breaking changes in future releases.
+</Warning>
+
+The `tailordb migration` commands help you manage database schema changes safely with automatic diff detection, migration file generation, and data transformation scripts.
+
+## Overview
+
+The migration system detects field-level schema differences between your local type definitions and the previous snapshot, then generates migration files to safely apply those changes.
+
+### Key Features
+
+- **Local snapshot-based diff detection** - Compares current types with previous migration snapshot
+- **Transaction-wrapped data migrations** - All changes commit or rollback together for atomicity
+- **Automatic execution during apply** - Pending migrations run as part of `tailor-sdk apply`
+- **TypeScript migration scripts** - Type-safe data transformations using Kysely
+
+## Commands
+
+### tailordb migration generate
+
+Generate migration files by detecting schema differences between current local types and the previous migration snapshot.
+
+```bash
+tailor-sdk tailordb migration generate [options]
+```
+
+#### Options
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--name" type="string" default="-n">
+  Optional description for the migration (e.g., "add email field to user")
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompts
+</ParamField>
+
+<ParamField path="--init" type="boolean" default="false">
+  Delete existing migrations and start fresh (requires confirmation)
+</ParamField>
+
+#### Generated Files
+
+Each migration creates a directory with a 4-digit sequential number:
+
+| File | Description |
+|------|-------------|
+| `0000/schema.json` | Initial schema snapshot (first migration only) |
+| `XXXX/diff.json` | Schema diff from previous snapshot |
+| `XXXX/migrate.ts` | Data migration script (only for breaking changes) |
+| `XXXX/db.ts` | Generated Kysely types for the migration script |
+
+#### Migration Script Structure
+
+```typescript
+import type { Transaction } from "./db";
+
+export async function main(trx: Transaction): Promise<void> {
+  // Your data migration logic here
+  // All operations use the transaction object (trx)
+  await trx
+    .updateTable("User")
+    .set({ email: "default@example.com" })
+    .where("email", "is", null)
+    .execute();
+}
+```
+
+The `db.ts` file contains Kysely types reflecting the schema **before** the migration runs, ensuring type-safe transformations.
+
+#### Editor Integration
+
+If the `EDITOR` environment variable is set, the generated script opens automatically:
+
+```bash
+export EDITOR=vim
+tailor-sdk tailordb migration generate
+# → After generation, vim opens XXXX/migrate.ts
+```
+
+#### Examples
+
+```bash
+# Generate migration for all schema changes
+tailor-sdk tailordb migration generate
+
+# Generate with a description
+tailor-sdk tailordb migration generate --name "add email field to user"
+
+# Generate without confirmation prompts
+tailor-sdk tailordb migration generate --yes
+
+# Delete existing migrations and start fresh
+tailor-sdk tailordb migration generate --init --yes
+```
+
+### tailordb migration set
+
+Set migration checkpoint to a specific number.
+
+```bash
+tailor-sdk tailordb migration set [options] <number>
+```
+
+#### Arguments
+
+<ParamField path="number" type="string" required>
+  Migration number to set (e.g., `0001` or `1`)
+</ParamField>
+
+#### Options
+
+<ParamField path="--workspace-id" type="string" default="-w">
+  Workspace ID for the operation
+</ParamField>
+
+<ParamField path="--profile" type="string" default="-p">
+  Workspace profile to use
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="-n">
+  Target TailorDB namespace (required if multiple namespaces exist)
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompts
+</ParamField>
+
+<Warning>
+Setting the migration checkpoint changes which migrations will be executed on next apply:
+
+- **Forward** (e.g., 0001 → 0003): Skips migrations 0002 and 0003
+- **Backward** (e.g., 0003 → 0001): Migrations 0002 and 0003 become pending and will re-execute
+</Warning>
+
+#### Examples
+
+```bash
+# Set migration checkpoint to 0001
+tailor-sdk tailordb migration set 1
+
+# Set without confirmation
+tailor-sdk tailordb migration set 1 --yes
+
+# Set for specific namespace
+tailor-sdk tailordb migration set 2 --namespace tailordb
+
+# Reset to initial state (all migrations become pending)
+tailor-sdk tailordb migration set 0 --yes
+```
+
+### tailordb migration status
+
+Show the current migration status for TailorDB namespaces, including applied and pending migrations.
+
+```bash
+tailor-sdk tailordb migration status [options]
+```
+
+#### Options
+
+<ParamField path="--workspace-id" type="string" default="-w">
+  Workspace ID for the operation
+</ParamField>
+
+<ParamField path="--profile" type="string" default="-p">
+  Workspace profile to use
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="-n">
+  Target TailorDB namespace (shows all namespaces if not specified)
+</ParamField>
+
+#### Example Output
+
+```
+Namespace: tailordb
+  Current migration: 0001
+  Pending migrations:
+    - 0002: Add email field to user
+    - 0003: Remove deprecated status field
+```
+
+#### Examples
+
+```bash
+# Show status for all namespaces
+tailor-sdk tailordb migration status
+
+# Show status for specific namespace
+tailor-sdk tailordb migration status --namespace tailordb
+```
+
+## Configuration
+
+Configure migrations in `tailor.config.ts`:
+
+```typescript
+export default defineConfig({
+  name: "my-app",
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+      migration: {
+        directory: "./migrations",
+        // Optional: specify machine user for migration script execution
+        // If not specified, the first machine user from auth.machineUsers is used
+        machineUser: "admin-machine-user",
+      },
+    },
+  },
+});
+```
+
+### Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `files` | `string[]` | Glob patterns for TailorDB type definition files |
+| `ignores` | `string[]` | Glob patterns to ignore |
+| `migration.directory` | `string` | Directory path for migration files |
+| `migration.machineUser` | `string` | Machine user name for migration script execution (optional) |
+
+### Machine User Selection
+
+When executing migration scripts, the system selects a machine user in the following priority:
+
+1. **Explicit configuration**: `migration.machineUser` in db config
+2. **Auto-selection**: First machine user from `auth.machineUsers`
+
+## Migration Directory Structure
+
+```
+migrations/
+├── 0000/                    # Initial schema (number 0)
+│   └── schema.json          # Full schema snapshot
+├── 0001/                    # First change
+│   ├── diff.json            # Schema diff
+│   ├── migrate.ts           # Migration script (if breaking changes)
+│   └── db.ts                # Kysely types (if breaking changes)
+├── 0002/                    # Second change
+│   └── diff.json
+└── ...
+```
+
+## Automatic Migration Execution
+
+When running `tailor-sdk apply`, pending migration scripts are automatically executed as part of the deployment process.
+
+### How It Works
+
+1. **Pending Migration Detection**: Identifies migration scripts that haven't been executed yet
+2. **Two-Stage Type Update**: For breaking changes:
+   - **Pre-Migration**: New fields are added as `optional` first
+   - **Script Execution**: Migration scripts run to populate data
+   - **Post-Migration**: Fields are changed to `required`, deletions are applied
+
+### Execution Flow
+
+```
+tailor-sdk apply
+    │
+    ├── Detect Pending Migrations
+    │
+    ├── [If pending migrations exist]
+    │   ├── Pre-Migration: Add fields as optional
+    │   ├── Execute Migration Scripts
+    │   └── Post-Migration: Apply required, deletions
+    │
+    └── Continue with normal apply flow
+```
+
+### Requirements
+
+1. **Migrations configured**: `migration` path set in db config
+2. **Auth configured**: Auth service with machine users
+3. **Kysely generator**: `@tailor-platform/kysely-type` generator configured
+
+### Example Output
+
+```
+ℹ Found 2 pending migration(s) to execute.
+ℹ Executing 2 pending migration(s)...
+ℹ Using machine user: admin-machine-user
+
+✔ Migration tailordb/0002 completed successfully
+✔ Migration tailordb/0003 completed successfully
+
+✔ All migrations completed successfully.
+✔ Successfully applied changes.
+```
+
+### Schema Verification
+
+By default, `tailor-sdk apply` performs two schema verifications:
+
+1. **Local schema check**: Ensures local type definitions match the migration snapshot
+2. **Remote schema check**: Ensures remote schema matches the expected state
+
+If drift is detected:
+
+```
+✖ Remote schema drift detected:
+Namespace: tailordb
+  Remote migration: 0007
+  Differences:
+  Type 'User':
+    - Field 'email': required: remote=false, expected=true
+
+ℹ This may indicate:
+  - Another developer applied different migrations
+  - Manual schema changes were made directly
+  - Migration history is out of sync
+
+ℹ Use '--no-schema-check' to skip this check (not recommended).
+```
+
+### Skipping Schema Check
+
+```bash
+tailor-sdk apply --no-schema-check
+```
+
+<Warning>
+Skipping schema checks may result in applying migrations to an inconsistent state.
+</Warning>
+
+## Supported Schema Changes
+
+| Change Type | Breaking? | Migration Script | Notes |
+|-------------|-----------|------------------|-------|
+| Add optional field | No | No | Schema change only |
+| Add required field | Yes | Yes | Script populates default values |
+| Remove field | No | No | Schema change only - data is preserved |
+| Change optional→required | Yes | Yes | Script sets defaults for null values |
+| Change required→optional | No | No | Schema change only |
+| Add index | No | No | Schema change only |
+| Remove index | No | No | Schema change only |
+| Add unique constraint | Yes | Yes | Script must resolve duplicate values |
+| Remove unique constraint | No | No | Schema change only |
+| Add enum value | No | No | Schema change only |
+| Remove enum value | Yes | Yes | Script migrates records with removed values |
+| Add type | No | No | Schema change only |
+| Remove type | No | No | Schema change only - data is preserved |
+| Change field type | - | - | **Not supported** - requires 3-step migration |
+| Change array property | - | - | **Not supported** - requires 3-step migration |
+| Change foreign key relationship | Yes | Yes | Script updates existing references |
+
+### Unsupported Schema Changes
+
+The following changes require a 3-step migration process:
+
+#### Field Type Change
+
+Field type changes (e.g., `string` → `integer`) are not directly supported. Use this strategy:
+
+1. **Migration 1**: Add a new field with the desired type (e.g., `fieldName_new`) and migrate data
+2. **Migration 2**: Remove the old field
+3. **Migration 3**: Add the field with the original name and new type, migrate data from temporary field, then remove temporary field
+
+#### Array Property Change
+
+Changing between single value and array (e.g., `array: false` → `array: true`) requires the same 3-step migration strategy.
+
+## Example Workflow
+
+### 1. Modify your type definition
+
+```typescript
+// tailordb/user.ts
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string(), // ← New required field
+  ...db.fields.timestamps(),
+});
+```
+
+### 2. Generate migration
+
+```bash
+tailor-sdk tailordb migration generate
+# Output: Generated migration 0001
+#   Diff file: ./migrations/0001/diff.json
+#   Migration script: ./migrations/0001/migrate.ts
+#   DB types: ./migrations/0001/db.ts
+```
+
+### 3. Edit the migration script
+
+```typescript
+// migrations/0001/migrate.ts
+import type { Transaction } from "./db";
+
+export async function main(trx: Transaction): Promise<void> {
+  await trx
+    .updateTable("User")
+    .set({ email: "default@example.com" })
+    .where("email", "is", null)
+    .execute();
+}
+```
+
+### 4. Apply migration
+
+```bash
+tailor-sdk apply
+# Migrations are automatically executed during apply
+```
+
+## Troubleshooting
+
+### Remote schema drift detected
+
+**Cause:** The remote schema doesn't match the expected state based on migration history.
+
+**Solution:**
+
+1. Check migration status: `tailor-sdk tailordb migration status`
+2. Sync with team: Ensure all team members have the same migration files
+3. Reset if needed: `tailor-sdk tailordb migration set <number>`
+4. Force apply (use with caution): `tailor-sdk apply --no-schema-check`
+
+### Machine user not found
+
+**Cause:** Specified machine user doesn't exist in auth configuration.
+
+**Solution:**
+
+1. Add machine user to your auth config:
+   ```typescript
+   machineUsers: {
+     "your-user-name": {
+       attributes: { role: "ADMIN" },
+     },
+   }
+   ```
+2. Run `tailor-sdk apply` to deploy the auth config
+3. Retry migration
+
+### Migration script execution fails
+
+**Cause:** Runtime error in your data migration logic.
+
+**Solution:**
+
+1. Check the error message for the failing query/operation
+2. Test your script logic locally if possible
+3. Fix the script
+4. Apply again: `tailor-sdk apply`
+
+## See Also
+
+- [apply](/cli/apply) - Deploy application with automatic migration execution
+- [tailordb truncate](/cli/tailordb-truncate) - Clear table data

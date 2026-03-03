@@ -1,0 +1,520 @@
+---
+title: Type Inference
+description: Extract TypeScript types from runtime schemas using t.infer and t.output
+---
+
+The Tailor Platform SDK's type system provides full TypeScript type inference from runtime schemas. This allows you to define your schema once and automatically derive TypeScript types for use throughout your application.
+
+## Overview
+
+The SDK exports two type utilities for extracting types from `TailorField` schemas:
+
+- `t.infer<T>` - Infer the output type of a schema
+- `t.output<T>` - Alias for `t.infer<T>`
+
+Both utilities extract the same type information and can be used interchangeably.
+
+## Basic Usage
+
+### Inferring from Type Builders
+
+```typescript
+import { t } from "@tailor-platform/sdk";
+
+const userSchema = t.object({
+  id: t.uuid(),
+  name: t.string(),
+  email: t.string(),
+  age: t.int({ optional: true }),
+  isActive: t.bool(),
+  tags: t.string({ array: true }),
+  role: t.enum(["admin", "user", "guest"]),
+});
+
+type User = t.infer<typeof userSchema>;
+/*
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  age?: number | null;
+  isActive: boolean;
+  tags: string[];
+  role: "admin" | "user" | "guest";
+}
+*/
+```
+
+### Using t.output
+
+`t.output` is an alias for `t.infer`:
+
+```typescript
+type User = t.output<typeof userSchema>;
+// Identical to t.infer<typeof userSchema>
+```
+
+## Type Inference Rules
+
+### Required Fields
+
+By default, all fields are required:
+
+```typescript
+const schema = t.object({
+  name: t.string(),
+  age: t.int(),
+});
+
+type Output = t.infer<typeof schema>;
+// { name: string; age: number }
+```
+
+### Optional Fields
+
+Fields marked `optional: true` become optional properties with `| null`:
+
+```typescript
+const schema = t.object({
+  title: t.string(),
+  description: t.string({ optional: true }),
+  count: t.int({ optional: true }),
+});
+
+type Output = t.infer<typeof schema>;
+/*
+{
+  title: string;
+  description?: string | null;
+  count?: number | null;
+}
+*/
+```
+
+### Array Fields
+
+Fields marked `array: true` become array types:
+
+```typescript
+const schema = t.object({
+  tags: t.string({ array: true }),
+  numbers: t.int({ array: true }),
+});
+
+type Output = t.infer<typeof schema>;
+// { tags: string[]; numbers: number[] }
+```
+
+### Optional Arrays
+
+Combining `optional` and `array`:
+
+```typescript
+const schema = t.object({
+  items: t.string({ optional: true, array: true }),
+});
+
+type Output = t.infer<typeof schema>;
+// { items?: string[] | null }
+```
+
+### Nested Objects
+
+Nested objects are recursively typed:
+
+```typescript
+const schema = t.object({
+  user: t.object({
+    name: t.object({
+      first: t.string(),
+      last: t.string(),
+    }),
+    address: t.object({
+      street: t.string(),
+      city: t.string(),
+      zipCode: t.string({ optional: true }),
+    }),
+  }),
+});
+
+type Output = t.infer<typeof schema>;
+/*
+{
+  user: {
+    name: {
+      first: string;
+      last: string;
+    };
+    address: {
+      street: string;
+      city: string;
+      zipCode?: string | null;
+    };
+  };
+}
+*/
+```
+
+### Enum Types
+
+Enum fields produce union types:
+
+```typescript
+const statusSchema = t.enum(["active", "inactive", "pending"]);
+
+type Status = t.infer<typeof statusSchema>;
+// "active" | "inactive" | "pending"
+
+const configSchema = t.object({
+  status: t.enum(["draft", "published"]),
+  priority: t.enum(["high", "medium", "low"], { optional: true }),
+});
+
+type Config = t.infer<typeof configSchema>;
+/*
+{
+  status: "draft" | "published";
+  priority?: "high" | "medium" | "low" | null;
+}
+*/
+```
+
+## Type Flow in Resolvers
+
+Type inference automatically flows through resolver definitions:
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "getUserById",
+  operation: "query",
+  input: {
+    id: t.uuid(),
+  },
+  output: t.object({
+    id: t.string(),
+    name: t.string(),
+    email: t.string(),
+  }),
+  body: ({ input }) => {
+    // input is automatically typed as { id: string }
+    const userId = input.id; // string
+
+    // Return type must match output schema
+    return {
+      id: userId,
+      name: "Alice",
+      email: "alice@example.com",
+    };
+  },
+});
+```
+
+### Input Type Inference
+
+The `input` parameter in the resolver `body` is automatically typed:
+
+```typescript
+export default createResolver({
+  name: "createPost",
+  operation: "mutation",
+  input: {
+    title: t.string(),
+    content: t.string(),
+    tags: t.string({ array: true }),
+    publishedAt: t.datetime({ optional: true }),
+  },
+  output: t.object({ id: t.uuid() }),
+  body: ({ input }) => {
+    // TypeScript knows:
+    // input.title: string
+    // input.content: string
+    // input.tags: string[]
+    // input.publishedAt: string | Date | null | undefined
+
+    return { id: crypto.randomUUID() };
+  },
+});
+```
+
+### Output Type Inference
+
+The return value must match the inferred output type:
+
+```typescript
+export default createResolver({
+  name: "getStatus",
+  operation: "query",
+  output: t.object({
+    status: t.enum(["online", "offline"]),
+    lastSeen: t.datetime({ optional: true }),
+  }),
+  body: () => {
+    // ✅ Valid
+    return {
+      status: "online" as const,
+      lastSeen: new Date().toISOString(),
+    };
+
+    // ❌ Type error: missing 'status'
+    // return { lastSeen: new Date().toISOString() };
+
+    // ❌ Type error: invalid enum value
+    // return { status: "away" };
+  },
+});
+```
+
+## Type Flow in Executors
+
+Infer types from TailorDB models for use in executor triggers:
+
+```typescript
+import { createExecutor, recordCreatedTrigger, t } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+import { getDB } from "../generated/tailordb";
+
+// Helper function with inferred type
+async function logUserCreation({ newRecord }: { newRecord: t.infer<typeof user> }) {
+  const db = getDB("tailordb");
+  
+  // newRecord is fully typed based on user model schema
+  await db
+    .insertInto("UserLog")
+    .values({
+      userID: newRecord.id,
+      message: `User created: ${newRecord.name} (${newRecord.email})`,
+    })
+    .execute();
+}
+
+export default createExecutor({
+  name: "user-created",
+  trigger: recordCreatedTrigger({
+    type: user,
+    condition: ({ newRecord }) => {
+      // newRecord is typed as t.infer<typeof user>
+      return newRecord.email.endsWith("@tailor.tech");
+    },
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      await logUserCreation(args);
+    },
+  },
+});
+```
+
+## Type Flow in Workflows
+
+Workflow jobs can use inferred types for input parameters:
+
+```typescript
+import { createWorkflowJob, t } from "@tailor-platform/sdk";
+
+const inputSchema = t.object({
+  message: t.string(),
+  recipient: t.string(),
+});
+
+type NotificationInput = t.infer<typeof inputSchema>;
+
+export const sendNotification = createWorkflowJob({
+  name: "send-notification",
+  body: async (input: NotificationInput) => {
+    // input.message: string
+    // input.recipient: string
+    console.log(`Sending to ${input.recipient}: ${input.message}`);
+    return { sent: true };
+  },
+});
+```
+
+## Type Extraction Helpers
+
+The SDK provides type helpers for common patterns:
+
+### InferFieldsOutput
+
+Extract the output type of a record of fields:
+
+```typescript
+import type { InferFieldsOutput } from "@tailor-platform/sdk";
+
+const fields = {
+  id: t.uuid(),
+  name: t.string(),
+  age: t.int({ optional: true }),
+};
+
+type Output = InferFieldsOutput<typeof fields>;
+/*
+{
+  id: string;
+  name: string;
+  age?: number | null;
+}
+*/
+```
+
+### output Helper
+
+Lower-level type extraction from any `TailorField`:
+
+```typescript
+import type { output } from "@tailor-platform/sdk";
+
+const field = t.string({ array: true });
+type FieldOutput = output<typeof field>;
+// string[]
+```
+
+## Working with TailorDB Models
+
+Infer types from database models defined with `db.type()`:
+
+```typescript
+import { db, t } from "@tailor-platform/sdk";
+
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(),
+  status: db.string({ optional: true }),
+  role: db.enum(["MANAGER", "STAFF"]),
+  ...db.fields.timestamps(),
+});
+
+// Extract the TypeScript type
+type UserRecord = t.infer<typeof user>;
+/*
+{
+  id: string;
+  name: string;
+  email: string;
+  status?: string | null;
+  role: "MANAGER" | "STAFF";
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+*/
+```
+
+### Using Model Field Subsets
+
+Combine `pickFields` and `omitFields` with type inference:
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+import { nestedProfile } from "../tailordb/nested";
+
+const inputFields = {
+  ...nestedProfile.pickFields(["id", "createdAt"], { optional: true }),
+  ...nestedProfile.omitFields(["id", "createdAt"]),
+};
+
+export default createResolver({
+  operation: "query",
+  name: "passThrough",
+  input: {
+    id: t.uuid({ optional: true }),
+    input: t.object(inputFields),
+  },
+  body: ({ input }) => ({
+    ...input.input,
+    id: input.id ?? crypto.randomUUID(),
+    createdAt: new Date(),
+  }),
+  output: nestedProfile.fields,
+});
+```
+
+## Best Practices
+
+### Define Schema Once
+
+Define your schema with type builders and infer types from it:
+
+```typescript
+// ✅ Good: Single source of truth
+const userSchema = t.object({
+  name: t.string(),
+  email: t.string(),
+});
+
+type User = t.infer<typeof userSchema>;
+
+// ❌ Avoid: Duplicating type definitions
+type User = {
+  name: string;
+  email: string;
+};
+const userSchema = t.object({
+  name: t.string(),
+  email: t.string(),
+});
+```
+
+### Use Exported Types
+
+Export inferred types for reuse across your application:
+
+```typescript
+// models/user.ts
+import { t } from "@tailor-platform/sdk";
+
+export const userSchema = t.object({
+  id: t.uuid(),
+  name: t.string(),
+  email: t.string(),
+});
+
+export type User = t.infer<typeof userSchema>;
+
+// resolvers/get-user.ts
+import { createResolver } from "@tailor-platform/sdk";
+import { userSchema, type User } from "../models/user";
+
+export default createResolver({
+  name: "getUser",
+  operation: "query",
+  output: userSchema,
+  body: (): User => {
+    return {
+      id: crypto.randomUUID(),
+      name: "Alice",
+      email: "alice@example.com",
+    };
+  },
+});
+```
+
+### Type Guards with Runtime Validation
+
+Combine type inference with runtime validation:
+
+```typescript
+const userSchema = t.object({
+  name: t.string(),
+  email: t.string(),
+});
+
+type User = t.infer<typeof userSchema>;
+
+function isValidUser(data: unknown, context: { user: TailorUser }): data is User {
+  const result = userSchema.parse({ value: data, data: {}, user: context.user });
+  return !result.issues;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Type Builders" icon="cube" href="/api/type-builders">
+    Learn about all available type builder functions
+  </Card>
+  <Card title="Create Resolver" icon="function" href="/api/create-resolver">
+    Build typed GraphQL resolvers with automatic type flow
+  </Card>
+</CardGroup>

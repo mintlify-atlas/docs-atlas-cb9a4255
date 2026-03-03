@@ -1,0 +1,309 @@
+---
+title: "definePlugins"
+description: "Define plugins for generating types, resolvers, and executors in Tailor Platform SDK"
+---
+
+## Function Signature
+
+```typescript
+function definePlugins(
+  ...configs: Plugin<any, any>[]
+): Plugin<any, any>[]
+```
+
+Defines plugins to be used with the Tailor SDK. Plugins can generate additional types, resolvers, and executors based on existing TailorDB types.
+
+## Parameters
+
+<ParamField path="...configs" type="Plugin[]" required>
+  Variable number of plugin instances. Each plugin must implement the `Plugin<TypeConfig, PluginConfig>` interface
+</ParamField>
+
+## Returns
+
+<ResponseField name="plugins" type="Plugin[]">
+  The same plugin configurations array passed as input
+</ResponseField>
+
+## Plugin Interface
+
+Plugins implement the following interface:
+
+```typescript
+interface Plugin<TypeConfig = unknown, PluginConfig = unknown> {
+  readonly id: string;
+  readonly description: string;
+  readonly importPath?: string;
+  readonly typeConfigRequired?: TypeConfigRequired<PluginConfig>;
+  readonly pluginConfig?: PluginConfig;
+  
+  // Definition-time hooks
+  onTypeLoaded?(context: PluginProcessContext<TypeConfig, PluginConfig>): TypePluginOutput | Promise<TypePluginOutput>;
+  onNamespaceLoaded?(context: PluginNamespaceProcessContext<PluginConfig>): NamespacePluginOutput | Promise<NamespacePluginOutput>;
+  
+  // Generation-time hooks
+  onTailorDBReady?(context: TailorDBReadyContext<PluginConfig>): GeneratorResult | Promise<GeneratorResult>;
+  onResolverReady?(context: ResolverReadyContext<PluginConfig>): GeneratorResult | Promise<GeneratorResult>;
+  onExecutorReady?(context: ExecutorReadyContext<PluginConfig>): GeneratorResult | Promise<GeneratorResult>;
+}
+```
+
+### Plugin Lifecycle Hooks
+
+<ParamField path="onTypeLoaded" type="function">
+  Called for each TailorDB type that has the plugin attached via `.plugin()`. Generates types, resolvers, and executors based on the source type.
+  
+  **Context:**
+  - `type`: The TailorDB type being processed
+  - `typeConfig`: Per-type configuration from `.plugin()`
+  - `pluginConfig`: Plugin-level configuration from `definePlugins()`
+  - `namespace`: TailorDB namespace
+  
+  **Returns:** `TypePluginOutput` with optional `types`, `resolvers`, `executors`, and `extends`
+</ParamField>
+
+<ParamField path="onNamespaceLoaded" type="function">
+  Called once per namespace for plugins configured via `definePlugins()`. Generates types independently of user-defined types.
+  
+  **Context:**
+  - `pluginConfig`: Plugin-level configuration
+  - `namespace`: Target namespace
+  
+  **Returns:** `NamespacePluginOutput` with optional `types`, `resolvers`, and `executors`
+</ParamField>
+
+<ParamField path="onTailorDBReady" type="function">
+  Called after all TailorDB types are loaded and finalized. Processes finalized artifacts and produces output files.
+  
+  **Returns:** `GeneratorResult` with generated files and optional errors
+</ParamField>
+
+<ParamField path="onResolverReady" type="function">
+  Called after all resolvers are loaded and finalized.
+  
+  **Returns:** `GeneratorResult` with generated files and optional errors
+</ParamField>
+
+<ParamField path="onExecutorReady" type="function">
+  Called after all executors are loaded and finalized.
+  
+  **Returns:** `GeneratorResult` with generated files and optional errors
+</ParamField>
+
+## Example
+
+### Using Built-in Plugins
+
+```typescript
+import { definePlugins } from "@tailor-platform/sdk";
+import { enumConstantsPlugin } from "@tailor-platform/sdk/plugin/enum-constants";
+import { fileUtilsPlugin } from "@tailor-platform/sdk/plugin/file-utils";
+import { kyselyTypePlugin } from "@tailor-platform/sdk/plugin/kysely-type";
+import { seedPlugin } from "@tailor-platform/sdk/plugin/seed";
+
+export const plugins = definePlugins(
+  kyselyTypePlugin({ distPath: "./generated/tailordb.ts" }),
+  enumConstantsPlugin({ distPath: "./generated/enums.ts" }),
+  fileUtilsPlugin({ distPath: "./generated/files.ts" }),
+  seedPlugin({ distPath: "./seed", machineUserName: "manager-machine-user" }),
+);
+```
+
+### Attaching Plugins to Types
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import { myPlugin } from "./plugins/my-plugin";
+
+// Attach plugin with per-type configuration
+export const customer = db.type("Customer", {
+  fields: {
+    id: db.id(),
+    name: db.string(),
+    email: db.string().unique(),
+  },
+}).plugin(myPlugin, {
+  // Per-type plugin configuration
+  trackChanges: true,
+});
+```
+
+### Creating a Custom Plugin
+
+```typescript
+import type { Plugin, PluginProcessContext, TypePluginOutput } from "@tailor-platform/sdk";
+
+interface MyPluginConfig {
+  distPath: string;
+}
+
+interface MyTypeConfig {
+  trackChanges: boolean;
+}
+
+export function myPlugin(config: MyPluginConfig): Plugin<MyTypeConfig, MyPluginConfig> {
+  return {
+    id: "@my-company/my-plugin",
+    description: "My custom plugin",
+    importPath: "@my-company/my-plugin",
+    pluginConfig: config,
+    typeConfigRequired: true,
+    
+    onTypeLoaded(context: PluginProcessContext<MyTypeConfig, MyPluginConfig>): TypePluginOutput {
+      const { type, typeConfig, namespace } = context;
+      
+      if (!typeConfig.trackChanges) {
+        return {};
+      }
+      
+      // Generate a history type
+      const historyType = db.type(`${type.name}History`, {
+        fields: {
+          id: db.id(),
+          recordId: db.uuid(),
+          ...type.fields,
+          changedAt: db.datetime(),
+        },
+      });
+      
+      return {
+        types: {
+          history: historyType,
+        },
+        executors: [
+          {
+            name: `track-${type.name}-changes`,
+            trigger: {
+              kind: "recordUpdated",
+              typeName: type.name,
+            },
+            operation: {
+              kind: "function",
+              body: `
+                const { newRecord } = args;
+                await createRecord({
+                  recordId: newRecord.id,
+                  ...newRecord,
+                  changedAt: new Date(),
+                });
+              `,
+            },
+          },
+        ],
+      };
+    },
+    
+    onTailorDBReady(context) {
+      // Generate output files
+      return {
+        files: [
+          {
+            path: context.pluginConfig.distPath,
+            content: "// Generated code",
+          },
+        ],
+      };
+    },
+  };
+}
+```
+
+## Built-in Plugins
+
+### Kysely Type Plugin
+
+Generates TypeScript types for TailorDB schemas using Kysely.
+
+```typescript
+import { kyselyTypePlugin } from "@tailor-platform/sdk/plugin/kysely-type";
+
+kyselyTypePlugin({ distPath: "./generated/tailordb.ts" })
+```
+
+**Requirements:**
+- Required for using `getDB()` in resolvers, executors, and workflows
+
+### Enum Constants Plugin
+
+Generates TypeScript constants for enum values.
+
+```typescript
+import { enumConstantsPlugin } from "@tailor-platform/sdk/plugin/enum-constants";
+
+enumConstantsPlugin({ distPath: "./generated/enums.ts" })
+```
+
+### File Utils Plugin
+
+Generates utility functions for file operations.
+
+```typescript
+import { fileUtilsPlugin } from "@tailor-platform/sdk/plugin/file-utils";
+
+fileUtilsPlugin({ distPath: "./generated/files.ts" })
+```
+
+### Seed Plugin
+
+Generates utilities for seeding data into TailorDB.
+
+```typescript
+import { seedPlugin } from "@tailor-platform/sdk/plugin/seed";
+
+seedPlugin({ 
+  distPath: "./seed", 
+  machineUserName: "manager-machine-user" 
+})
+```
+
+**Requirements:**
+- Install `@tailor-platform/function-types` as a devDependency
+
+## Plugin Output Types
+
+### Generated Types
+
+```typescript
+interface PluginGeneratedTypes {
+  [kind: string]: TailorDBTypeForPlugin;
+}
+```
+
+The `kind` key is used to generate distinct TypeScript type files.
+
+### Generated Resolvers
+
+```typescript
+interface PluginGeneratedResolver {
+  name: string;
+  operation: "query" | "mutation";
+  inputFields?: Record<string, unknown>;
+  outputFields: Record<string, unknown>;
+  body: string; // Function body code as string
+}
+```
+
+### Generated Executors
+
+```typescript
+type PluginGeneratedExecutor = 
+  | PluginGeneratedExecutorWithFile  // New format (recommended)
+  | PluginGeneratedExecutorLegacy;   // Legacy format
+
+interface PluginGeneratedExecutorWithFile {
+  name: string;
+  resolve: () => Promise<PluginExecutorModule>;
+  context: PluginExecutorContext;
+}
+```
+
+## Notes
+
+- Plugins can hook into two lifecycle phases:
+  - **Definition-time hooks**: Generate TailorDB types, resolvers, and executors (`onTypeLoaded`, `onNamespaceLoaded`)
+  - **Generation-time hooks**: Process finalized artifacts and produce output files (`onTailorDBReady`, `onResolverReady`, `onExecutorReady`)
+- The `importPath` is required when a plugin has definition-time hooks for proper import statement generation
+- Per-type configuration is passed via the `.plugin()` method on TailorDB types
+- Plugin-level configuration is passed via the plugin factory function and available in all hooks
+- Plugins are more powerful than the deprecated `defineGenerators()` function
+- See the [example/](https://github.com/tailor-platform/tailor-platform/tree/main/example) directory for working implementations

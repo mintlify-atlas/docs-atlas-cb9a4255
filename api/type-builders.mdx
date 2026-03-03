@@ -1,0 +1,442 @@
+---
+title: Type Builders
+description: Build runtime-validated schemas using t.* type builders for resolvers, executors, and workflows
+---
+
+The Tailor Platform SDK provides a collection of type builders under the `t` namespace that create runtime-validated schemas with full TypeScript type inference. These builders are used to define input and output types for resolvers, executors, and workflows.
+
+## Overview
+
+Type builders create `TailorField` instances that carry both:
+- Runtime validation logic
+- TypeScript type information via the `_output` property
+
+All type builders support optional modifiers and can be combined to create complex schemas.
+
+## Primitive Types
+
+### String
+
+Create a string field.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "example",
+  operation: "query",
+  input: {
+    name: t.string(),
+    description: t.string({ optional: true }),
+    tags: t.string({ array: true }),
+  },
+  output: t.string(),
+  body: ({ input }) => {
+    return `Hello ${input.name}`;
+  },
+});
+```
+
+**Type mapping**: `string`
+
+### Integer
+
+Create an integer field. Validates that the value is a whole number.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "add",
+  operation: "query",
+  input: {
+    a: t.int(),
+    b: t.int(),
+  },
+  output: t.int(),
+  body: ({ input }) => input.a + input.b,
+});
+```
+
+**Type mapping**: `number`
+
+### Float
+
+Create a floating-point number field. Validates that the value is a finite number.
+
+```typescript
+const priceField = t.float();
+const optionalPrice = t.float({ optional: true });
+const prices = t.float({ array: true });
+```
+
+**Type mapping**: `number`
+
+### Boolean
+
+Create a boolean field.
+
+```typescript
+const isActiveField = t.bool();
+const flags = t.bool({ array: true });
+```
+
+**Type mapping**: `boolean`
+
+## Format-Specific Types
+
+### UUID
+
+Create a UUID field with format validation (RFC 4122).
+
+```typescript
+const idField = t.uuid();
+const optionalId = t.uuid({ optional: true });
+```
+
+**Type mapping**: `string`  
+**Format**: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+
+### Date
+
+Create a date field with format validation.
+
+```typescript
+const birthDate = t.date();
+```
+
+**Type mapping**: `string`  
+**Format**: `yyyy-MM-dd` (e.g., `"2025-12-21"`)
+
+### DateTime
+
+Create a datetime field with ISO format validation.
+
+```typescript
+const createdAt = t.datetime();
+const updatedAt = t.datetime({ optional: true });
+```
+
+**Type mapping**: `string | Date`  
+**Format**: ISO 8601 with milliseconds (e.g., `"2025-12-21T10:11:12.123Z"`)
+
+### Time
+
+Create a time field with format validation.
+
+```typescript
+const openingTime = t.time();
+```
+
+**Type mapping**: `string`  
+**Format**: `HH:mm` (e.g., `"10:11"`)
+
+### Decimal
+
+Create a decimal field stored as a string for precision. Useful for monetary values.
+
+```typescript
+const price = t.decimal();
+const optionalAmount = t.decimal({ optional: true });
+```
+
+**Type mapping**: `string`  
+**Format**: Decimal string (e.g., `"123.45"`, `"1.5e10"`)
+
+## Complex Types
+
+### Enum
+
+Create an enum field with a fixed set of allowed string values.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "showUserInfo",
+  operation: "query",
+  body: (context) => {
+    return {
+      id: context.user.id,
+      type: context.user.type,
+      workspaceId: context.user.workspaceId,
+      role: context.user.attributes?.role ?? "MANAGER",
+    };
+  },
+  output: t.object({
+    id: t.string(),
+    type: t.string(),
+    workspaceId: t.string(),
+    role: t.enum(["MANAGER", "STAFF"]),
+  }),
+});
+```
+
+**Type mapping**: Union of literal types (e.g., `"MANAGER" | "STAFF"`)
+
+#### With Descriptions
+
+You can provide descriptions for enum values:
+
+```typescript
+const size = t.enum([
+  { value: "small", description: "Small size" },
+  { value: "medium" },
+  { value: "large", description: "Large size" },
+]);
+```
+
+#### Options
+
+```typescript
+const optionalStatus = t.enum(["active", "inactive"], { optional: true });
+const categories = t.enum(["a", "b", "c"], { array: true });
+```
+
+### Object
+
+Create a nested object field with typed properties.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "stepChain",
+  operation: "query",
+  input: {
+    user: t.object({
+      name: t.object({
+        first: t.string(),
+        last: t.string(),
+      }),
+      activatedAt: t.datetime({ optional: true }),
+    }),
+  },
+  output: t.object({
+    result: t.object({
+      summary: t.string({ array: true }),
+    }),
+  }),
+  body: async (context) => {
+    const fullName = `${context.input.user.name.first} ${context.input.user.name.last}`;
+    return {
+      result: {
+        summary: [`Hello ${fullName}`],
+      },
+    };
+  },
+});
+```
+
+**Type mapping**: Object with inferred property types
+
+#### Array of Objects
+
+```typescript
+const items = t.object(
+  {
+    id: t.uuid(),
+    name: t.string(),
+  },
+  { array: true }
+);
+
+// Type: { id: string; name: string }[]
+```
+
+#### Optional Objects
+
+```typescript
+const metadata = t.object(
+  {
+    version: t.string(),
+    author: t.string(),
+  },
+  { optional: true }
+);
+
+// Type: { version: string; author: string } | null
+```
+
+## Field Modifiers
+
+### Optional
+
+Make a field optional (allows `null` or `undefined`).
+
+```typescript
+const schema = t.object({
+  title: t.string(),
+  description: t.string({ optional: true }),
+  age: t.int({ optional: true }),
+});
+
+// Type: { title: string; description?: string | null; age?: number | null }
+```
+
+### Array
+
+Make a field accept an array of values.
+
+```typescript
+const schema = t.object({
+  tags: t.string({ array: true }),
+  scores: t.int({ array: true }),
+});
+
+// Type: { tags: string[]; scores: number[] }
+```
+
+### Combined Modifiers
+
+You can combine `optional` and `array`:
+
+```typescript
+const schema = t.object({
+  items: t.string({ optional: true, array: true }),
+});
+
+// Type: { items?: string[] | null }
+```
+
+## Field Methods
+
+### description()
+
+Add a description to a field for documentation and GraphQL schema generation.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "add",
+  operation: "query",
+  input: {
+    a: t.int().description("First number to add"),
+    b: t.int().description("Second number to add"),
+  },
+  output: t.int().description("Sum of the two input numbers"),
+  body: ({ input }) => input.a + input.b,
+});
+```
+
+### typeName()
+
+Set a custom type name for `enum` or `object` types. Used for GraphQL schema generation.
+
+```typescript
+const user = t.object({
+  name: t.object({
+    first: t.string(),
+    last: t.string(),
+  }),
+  activatedAt: t.datetime({ optional: true }),
+}).typeName("StepChainUser");
+```
+
+<Note>
+`typeName()` can only be called on `enum` and `object` (nested) types.
+</Note>
+
+### validate()
+
+Add custom validation functions to a field. Validators run after type checking.
+
+```typescript
+import { createResolver, t } from "@tailor-platform/sdk";
+
+const validators: [(a: { value: number }) => boolean, string][] = [
+  [({ value }) => value >= 0, "Value must be non-negative"],
+  [({ value }) => value < 10, "Value must be less than 10"],
+];
+
+export default createResolver({
+  name: "add",
+  operation: "query",
+  input: {
+    a: t.int().validate(...validators),
+    b: t.int().validate(...validators),
+  },
+  output: t.int(),
+  body: ({ input }) => input.a + input.b,
+});
+```
+
+#### Validator Function Signature
+
+```typescript
+type ValidatorFn<T> = (args: {
+  value: T;
+  data: unknown;
+  user: TailorUser;
+}) => boolean;
+
+type Validator<T> = ValidatorFn<T> | [ValidatorFn<T>, string];
+```
+
+- First element: validation function returning `true` if valid
+- Second element: error message to show on failure
+
+#### Nested Field Validation
+
+```typescript
+const user = t.object({
+  name: t.object({
+    first: t
+      .string()
+      .validate([({ value }) => value.length >= 2, "First name must be at least 2 characters"]),
+    last: t
+      .string()
+      .validate([({ value }) => value.length >= 2, "Last name must be at least 2 characters"]),
+  }),
+});
+```
+
+## Runtime Validation
+
+All type builders include a `parse()` method for runtime validation:
+
+```typescript
+const schema = t.object({
+  name: t.string(),
+  age: t.int({ optional: true }),
+});
+
+const result = schema.parse({
+  value: { name: "Alice", age: 30 },
+  data: {},
+  user: context.user,
+});
+
+if (result.issues) {
+  // Validation failed
+  console.error(result.issues);
+} else {
+  // result.value is { name: string; age?: number | null }
+  console.log(result.value);
+}
+```
+
+The `parse()` method returns a StandardSchema Result:
+
+```typescript
+type Result<T> =
+  | { value: T; issues?: undefined }
+  | { value?: undefined; issues: Issue[] };
+
+type Issue = {
+  message: string;
+  path?: string[];
+};
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Type Inference" icon="wand-magic-sparkles" href="/api/type-inference">
+    Learn how to extract TypeScript types from runtime schemas
+  </Card>
+  <Card title="Create Resolver" icon="function" href="/api/create-resolver">
+    Build typed GraphQL resolvers with input/output validation
+  </Card>
+</CardGroup>

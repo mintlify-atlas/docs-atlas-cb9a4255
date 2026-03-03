@@ -1,0 +1,218 @@
+---
+title: "db.type()"
+description: "Define TailorDB types with fields and configuration"
+---
+
+The `db.type()` method creates a new TailorDB type with fields, permissions, and other configuration. Each type automatically includes an `id` field (UUID) and generates a full GraphQL API with CRUD operations.
+
+## Basic Syntax
+
+<ParamField path="name" type="string | [string, string]" required>
+  The type name, or a tuple of `[typeName, pluralForm]` to specify the plural form.
+</ParamField>
+
+<ParamField path="fields" type="Record<string, TailorDBField>" required>
+  Field definitions for the type. Do not include `id` - it's automatically added.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Optional description of the type. Can be passed as the second argument before fields.
+</ParamField>
+
+## Simple Type Definition
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(),
+  age: db.int(),
+  ...db.fields.timestamps(),
+});
+
+// Always export both the value and type
+export type user = typeof user;
+```
+
+## Type Definition Rules
+
+- **Multiple types per file**: You can define multiple TailorDB types in a single file
+- **Export method**: Use named exports (`export const`)
+- **Export both value and type**: Always export both the runtime value and TypeScript type
+- **Uniqueness**: Type names must be unique across all TailorDB files
+- **Automatic ID field**: Every type automatically gets an `id` field (UUID)
+
+## Plural Form
+
+Specify the plural form by passing an array as the first argument:
+
+```typescript
+export const salesOrder = db.type(["SalesOrder", "SalesOrderList"], {
+  totalPrice: db.int({ optional: true }),
+  discount: db.float({ optional: true }),
+  status: db.string({ optional: true }),
+  ...db.fields.timestamps(),
+});
+export type salesOrder = typeof salesOrder;
+```
+
+## With Description
+
+Add a description as the second argument:
+
+```typescript
+export const customer = db.type("Customer", "Customer information", {
+  name: db.string(),
+  email: db.string(),
+  phone: db.string({ optional: true }),
+  country: db.string(),
+  ...db.fields.timestamps(),
+});
+export type customer = typeof customer;
+```
+
+## Multiple Types in One File
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+
+export const role = db.type("Role", {
+  name: db.string().unique(),
+});
+export type role = typeof role;
+
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(),
+  roleId: db.uuid().relation({
+    type: "n-1",
+    toward: { type: role },
+  }),
+});
+export type user = typeof user;
+```
+
+## Type Modifiers
+
+After defining a type with `db.type()`, you can chain additional configuration methods:
+
+### Composite Indexes
+
+Create indexes spanning multiple fields:
+
+```typescript
+export const user = db.type("User", {
+  name: db.string(),
+  department: db.string({ optional: true }),
+  status: db.string({ optional: true }),
+  ...db.fields.timestamps(),
+})
+  .indexes(
+    { fields: ["name", "department"], unique: false },
+    { fields: ["status", "createdAt"], unique: false, name: "user_status_created_idx" },
+  );
+```
+
+### File Fields
+
+Add file upload fields:
+
+```typescript
+export const user = db.type("User", {
+  name: db.string(),
+})
+  .files({ avatar: "profile image" });
+
+export const salesOrder = db.type("SalesOrder", {
+  totalPrice: db.int({ optional: true }),
+})
+  .files({
+    receipt: "receipt file",
+    form: "order form file",
+  });
+```
+
+### Features
+
+Enable special features like aggregation and bulk upsert:
+
+```typescript
+export const analytics = db.type("Analytics", {
+  metric: db.string(),
+  value: db.int(),
+})
+  .features({
+    aggregation: true,
+    bulkUpsert: true,
+  });
+```
+
+### GQL Operations
+
+Control which GraphQL operations are available:
+
+```typescript
+// Read-only type
+export const log = db.type("Log", {
+  message: db.string(),
+  timestamp: db.datetime(),
+})
+  .features({
+    gqlOperations: "query", // Disables create, update, delete
+  });
+
+// Granular control
+export const config = db.type("Config", {
+  key: db.string().unique(),
+  value: db.string(),
+})
+  .features({
+    gqlOperations: {
+      create: true,
+      read: true,
+      update: true,
+      delete: false, // Prevent deletion
+    },
+  });
+```
+
+## Helper Methods
+
+### pickFields
+
+Create a subset of fields from an existing type:
+
+```typescript
+const userFields = user.pickFields(["name", "email"], { optional: true });
+```
+
+### omitFields
+
+Create a field set excluding certain fields:
+
+```typescript
+const userFieldsWithoutEmail = user.omitFields(["email"]);
+```
+
+## Return Type
+
+`db.type()` returns a `TailorDBType` instance with:
+
+<ResponseField name="name" type="string">
+  The type name
+</ResponseField>
+
+<ResponseField name="fields" type="Record<string, TailorDBField>">
+  All fields including the automatically added `id` field
+</ResponseField>
+
+<ResponseField name="metadata" type="TailorDBTypeMetadata">
+  Type metadata including permissions, indexes, and settings
+</ResponseField>
+
+## See Also
+
+- [Field Types](/api/db-fields) - Available field types and modifiers
+- [Relations](/api/db-relations) - Defining relations between types
+- [Permissions](/api/db-permissions) - Configuring access control

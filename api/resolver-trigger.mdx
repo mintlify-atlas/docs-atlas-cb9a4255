@@ -1,0 +1,452 @@
+---
+title: "Resolver Trigger"
+description: "Execute code after a resolver completes"
+---
+
+Resolver triggers fire when a GraphQL resolver completes execution, allowing you to perform follow-up actions like sending notifications, logging events, or triggering workflows based on resolver results.
+
+## Overview
+
+The `resolverExecutedTrigger()` function creates triggers that fire after a resolver executes. You can access both successful results and error information, making it ideal for post-processing, auditing, and event-driven workflows.
+
+## Parameters
+
+<ParamField path="resolver" type="ResolverConfig" required>
+  The resolver to monitor for execution events. Must be a resolver created with `createResolver()`.
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function that receives the execution result and returns a boolean. Only triggers if the function returns `true`.
+  
+  **Parameters:**
+  - `success` - Boolean indicating if resolver succeeded
+  - `result` - Resolver output (only available when `success` is `true`)
+  - `error` - Error message (only available when `success` is `false`)
+  - `resolverName` - Name of the executed resolver
+  - `workspaceId` - Workspace identifier
+  - `appNamespace` - Application namespace
+</ParamField>
+
+## Basic Example
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { createOrderResolver } from "../resolvers/create-order";
+
+export default createExecutor({
+  name: "order-created-notification",
+  description: "Send notification after order is created",
+  trigger: resolverExecutedTrigger({
+    resolver: createOrderResolver,
+    condition: ({ result, error }) => !error && !!result?.order,
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ result, resolverName }) => {
+      console.log(`${resolverName} completed successfully`);
+      console.log(`Order ID: ${result.order.id}`);
+      // Send notification
+    },
+  },
+});
+```
+
+## Event Context
+
+Resolver triggers receive a discriminated union based on execution success:
+
+```typescript
+type ResolverExecutedArgs<R> = EventArgs & {
+  resolverName: string;
+} & (
+  | {
+      success: true;
+      result: ResolverOutput<R>;
+      error?: never;
+    }
+  | {
+      success: false;
+      result?: never;
+      error: string;
+    }
+);
+```
+
+### Accessing Results Safely
+
+Use the `success` field to narrow the type:
+
+```typescript
+body: async (args) => {
+  if (args.success) {
+    // TypeScript knows `result` is available
+    console.log("Result:", args.result);
+  } else {
+    // TypeScript knows `error` is available
+    console.error("Error:", args.error);
+  }
+}
+```
+
+### Legacy Condition Pattern
+
+You can also check for `error` in the condition:
+
+```typescript
+trigger: resolverExecutedTrigger({
+  resolver: myResolver,
+  condition: ({ result, error }) => {
+    // Fires only on success with valid result
+    return !error && !!result?.data;
+  },
+})
+```
+
+## Real-World Examples
+
+### Post-Processing with Webhook
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import stepChain from "../resolvers/stepChain";
+
+export default createExecutor({
+  name: "step-chain-executed",
+  description: "Triggered when a step chain is executed",
+  trigger: resolverExecutedTrigger({
+    resolver: stepChain,
+    condition: ({ result }) => {
+      if (!result) return false;
+      return result.result.summary.length > 0;
+    },
+  }),
+  operation: {
+    kind: "webhook",
+    url: ({ result }) => 
+      `https://example.com/webhook/${result!.result.summary.length}`,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: { vault: "my-vault", key: "my-secret" },
+    },
+    requestBody: ({ result }) => ({
+      orderId: result!.result.summary[0],
+      customerID: result!.result.summary[1],
+      totalPrice: result!.result.summary[2],
+    }),
+  },
+});
+```
+
+### Error Logging and Monitoring
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { criticalResolver } from "../resolvers/critical";
+
+export default createExecutor({
+  name: "resolver-error-monitor",
+  description: "Monitor and log resolver errors",
+  trigger: resolverExecutedTrigger({
+    resolver: criticalResolver,
+    // Trigger only on errors
+    condition: ({ success }) => !success,
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      if (!args.success) {
+        console.error({
+          resolver: args.resolverName,
+          error: args.error,
+          timestamp: new Date().toISOString(),
+          workspace: args.workspaceId,
+        });
+        
+        // Send alert to monitoring service
+      }
+    },
+  },
+});
+```
+
+### Audit Trail
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { updateUserResolver } from "../resolvers/update-user";
+import { getDB } from "../generated/tailordb";
+
+export default createExecutor({
+  name: "user-update-audit",
+  description: "Log all user updates for audit purposes",
+  trigger: resolverExecutedTrigger({
+    resolver: updateUserResolver,
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      const db = getDB("tailordb");
+      
+      await db
+        .insertInto("AuditLog")
+        .values({
+          action: "resolver_executed",
+          resolverName: args.resolverName,
+          success: args.success,
+          result: args.success ? JSON.stringify(args.result) : null,
+          error: args.success ? null : args.error,
+          timestamp: new Date(),
+        })
+        .execute();
+    },
+  },
+});
+```
+
+### Trigger Workflow on Success
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { createPaymentResolver } from "../resolvers/create-payment";
+import fulfillmentWorkflow from "../workflows/fulfillment";
+
+export default createExecutor({
+  name: "payment-to-fulfillment",
+  description: "Start fulfillment workflow after successful payment",
+  trigger: resolverExecutedTrigger({
+    resolver: createPaymentResolver,
+    condition: ({ success, result }) => 
+      success && result?.payment?.status === "succeeded",
+  }),
+  operation: {
+    kind: "workflow",
+    workflow: fulfillmentWorkflow,
+    args: ({ result }) => ({
+      orderId: result!.payment.orderId,
+      paymentId: result!.payment.id,
+    }),
+  },
+});
+```
+
+### GraphQL Mutation on Resolver Success
+
+```typescript
+import { createExecutor, resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { processOrderResolver } from "../resolvers/process-order";
+
+export default createExecutor({
+  name: "order-processed-notification",
+  description: "Create notification record after order processing",
+  trigger: resolverExecutedTrigger({
+    resolver: processOrderResolver,
+    condition: ({ success }) => success,
+  }),
+  operation: {
+    kind: "graphql",
+    query: `
+      mutation CreateNotification($input: NotificationCreateInput!) {
+        createNotification(input: $input) {
+          id
+          message
+        }
+      }
+    `,
+    variables: ({ result }) => ({
+      input: {
+        userId: result!.order.customerId,
+        message: `Your order ${result!.order.id} has been processed`,
+        type: "ORDER_UPDATE",
+      },
+    }),
+  },
+});
+```
+
+## Use Cases
+
+### Post-Processing
+
+Perform additional operations after a resolver completes:
+
+- Send confirmation emails
+- Update related records
+- Trigger external webhooks
+- Generate reports
+
+### Monitoring and Observability
+
+Track resolver performance and errors:
+
+- Log execution metrics
+- Send alerts on failures
+- Track success rates
+- Monitor response times
+
+### Event-Driven Workflows
+
+Chain operations based on resolver outcomes:
+
+- Start multi-step workflows
+- Trigger downstream services
+- Coordinate microservices
+- Implement saga patterns
+
+### Audit and Compliance
+
+Maintain audit trails:
+
+- Log all resolver executions
+- Track data changes
+- Record user actions
+- Meet compliance requirements
+
+## Advanced Patterns
+
+### Conditional Branching
+
+```typescript
+export default createExecutor({
+  name: "resolver-branch",
+  trigger: resolverExecutedTrigger({
+    resolver: myResolver,
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      if (!args.success) {
+        // Handle error case
+        await handleError(args.error);
+        return;
+      }
+      
+      // Handle success case
+      if (args.result.amount > 1000) {
+        await processLargeOrder(args.result);
+      } else {
+        await processSmallOrder(args.result);
+      }
+    },
+  },
+});
+```
+
+### Retry Failed Resolvers
+
+```typescript
+export default createExecutor({
+  name: "resolver-retry",
+  trigger: resolverExecutedTrigger({
+    resolver: unreliableResolver,
+    condition: ({ success }) => !success,
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ error, resolverName }) => {
+      console.log(`${resolverName} failed: ${error}`);
+      // Implement retry logic or dead letter queue
+    },
+  },
+});
+```
+
+### Fan-Out Pattern
+
+```typescript
+export default createExecutor({
+  name: "resolver-fanout",
+  trigger: resolverExecutedTrigger({
+    resolver: dataResolver,
+    condition: ({ success }) => success,
+  }),
+  operation: {
+    kind: "function",
+    body: async ({ result }) => {
+      // Trigger multiple downstream operations
+      await Promise.all([
+        notifyUsers(result),
+        updateAnalytics(result),
+        syncToWarehouse(result),
+      ]);
+    },
+  },
+});
+```
+
+## Best Practices
+
+### Always Check Success Status
+
+```typescript
+body: async (args) => {
+  if (args.success) {
+    // Safe to access args.result
+  } else {
+    // Safe to access args.error
+  }
+}
+```
+
+### Use Condition Functions
+
+Filter events at the trigger level to reduce unnecessary executions:
+
+```typescript
+trigger: resolverExecutedTrigger({
+  resolver: myResolver,
+  condition: ({ success, result }) => 
+    success && result?.status === "completed",
+})
+```
+
+### Handle Both Success and Error Cases
+
+```typescript
+body: async (args) => {
+  const db = getDB("tailordb");
+  
+  await db
+    .insertInto("ResolverLog")
+    .values({
+      resolverName: args.resolverName,
+      success: args.success,
+      data: args.success ? args.result : null,
+      error: args.success ? null : args.error,
+    })
+    .execute();
+}
+```
+
+### Type Safety
+
+The result type is automatically inferred from your resolver:
+
+```typescript
+import { createResolver } from "@tailor-platform/sdk";
+
+const myResolver = createResolver({
+  name: "myResolver",
+  output: t.object({ orderId: t.string(), total: t.number() }),
+  // ...
+});
+
+// TypeScript knows the result type
+trigger: resolverExecutedTrigger({
+  resolver: myResolver,
+  condition: ({ result }) => {
+    // result.orderId and result.total are typed!
+    return result?.total > 100;
+  },
+})
+```
+
+<Note>
+  Resolver triggers execute asynchronously after the resolver completes. They cannot modify the resolver's response or prevent it from returning.
+</Note>
+
+## Related
+
+- [Executor Overview](/api/create-executor)
+- [Record Triggers](/api/record-triggers)
+- [Resolver Documentation](/api/create-resolver)
+- [Workflow Operation](https://docs.tailor.tech/guides/executor/overview)

@@ -1,0 +1,336 @@
+---
+title: "Relations"
+description: "Define foreign keys and relations between TailorDB types"
+---
+
+Relations in TailorDB connect types together through foreign key constraints. Relations automatically create database indexes and generate GraphQL fields for traversing relationships.
+
+## Basic Relation Syntax
+
+Add a relation using the `.relation()` modifier on a field:
+
+```typescript
+fieldName.relation({
+  type: "n-1" | "1-1" | "keyOnly",
+  toward: {
+    type: targetType,
+    as?: string,
+    key?: string,
+  },
+  backward?: string,
+})
+```
+
+<ParamField path="type" type="'n-1' | '1-1' | 'keyOnly'" required>
+  The relation type:
+  - `"n-1"` or `"manyToOne"`: Many-to-one (creates a relation field)
+  - `"1-1"` or `"oneToOne"`: One-to-one (creates a relation field and unique constraint)
+  - `"keyOnly"`: Foreign key constraint only (no GraphQL relation field)
+</ParamField>
+
+<ParamField path="toward.type" type="TailorDBType" required>
+  The target type to relate to.
+</ParamField>
+
+<ParamField path="toward.as" type="string">
+  Custom name for the forward relation field in GraphQL.
+</ParamField>
+
+<ParamField path="toward.key" type="string">
+  Target field to reference (defaults to `"id"`).
+</ParamField>
+
+<ParamField path="backward" type="string">
+  Custom name for the backward relation field in GraphQL.
+</ParamField>
+
+## Many-to-One Relations (n-1)
+
+The most common relation type. Many records can reference one parent record.
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import { customer } from "./customer";
+
+export const salesOrder = db.type("SalesOrder", {
+  customerID: db.uuid().relation({
+    type: "n-1",
+    toward: { type: customer },
+  }),
+  totalPrice: db.int({ optional: true }),
+  discount: db.float({ optional: true }),
+  ...db.fields.timestamps(),
+});
+```
+
+This creates:
+- A foreign key constraint from `salesOrder.customerID` to `customer.id`
+- An index on `salesOrder.customerID`
+- A GraphQL field `customer` on `SalesOrder` for accessing the related customer
+- A GraphQL field `salesOrders` on `Customer` for accessing all related orders
+
+**GraphQL schema**:
+
+```graphql
+type SalesOrder {
+  id: ID!
+  customerID: ID!
+  customer: Customer  # Forward relation
+  totalPrice: Int
+  discount: Float
+}
+
+type Customer {
+  id: ID!
+  salesOrders: [SalesOrder!]!  # Backward relation
+}
+```
+
+## One-to-One Relations (1-1)
+
+One record relates to exactly one other record. Automatically adds a unique constraint.
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import { user } from "./user";
+
+export const userSetting = db.type("UserSetting", {
+  language: db.enum(["jp", "en"]),
+  userID: db.uuid().relation({
+    type: "1-1",
+    toward: { type: user },
+    backward: "setting",
+  }),
+  ...db.fields.timestamps(),
+});
+```
+
+This creates:
+- A foreign key constraint from `userSetting.userID` to `user.id`
+- An index on `userSetting.userID`
+- A **unique constraint** on `userSetting.userID` (ensuring one-to-one)
+- A GraphQL field `user` on `UserSetting`
+- A GraphQL field `setting` on `User` (custom name via `backward`)
+
+**GraphQL schema**:
+
+```graphql
+type UserSetting {
+  id: ID!
+  language: String!
+  userID: ID!
+  user: User  # Forward relation
+}
+
+type User {
+  id: ID!
+  setting: UserSetting  # Backward relation (note singular)
+}
+```
+
+## Key-Only Relations
+
+Creates a foreign key constraint without generating GraphQL relation fields. Useful for references that don't need traversal.
+
+```typescript
+export const salesOrder = db.type("SalesOrder", {
+  approvedByUserIDs: db.uuid({ optional: true, array: true }).relation({
+    type: "keyOnly",
+    toward: { type: user },
+  }),
+  totalPrice: db.int({ optional: true }),
+});
+```
+
+This creates:
+- A foreign key constraint ensuring `approvedByUserIDs` values exist in `user.id`
+- **No GraphQL relation fields** (only the ID array is exposed)
+
+## Customizing Relation Names
+
+Use `toward.as` and `backward` to customize GraphQL field names:
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+import { salesOrder } from "./salesOrder";
+
+export const invoice = db.type("Invoice", {
+  invoiceNumber: db.string(),
+  salesOrderID: db.uuid().relation({
+    type: "1-1",
+    toward: { type: salesOrder, as: "order" },
+    backward: "invoice",
+  }),
+  amount: db.int({ optional: true }),
+});
+```
+
+**GraphQL schema**:
+
+```graphql
+type Invoice {
+  id: ID!
+  salesOrderID: ID!
+  order: SalesOrder  # Custom name via "as"
+  amount: Int
+}
+
+type SalesOrder {
+  id: ID!
+  invoice: Invoice  # Custom name via "backward"
+}
+```
+
+## Relations to Non-ID Fields
+
+By default, relations target the `id` field. Use `toward.key` to reference a different field:
+
+```typescript
+export const user = db.type("User", {
+  email: db.string().unique(),
+  name: db.string(),
+});
+
+export const userProfile = db.type("UserProfile", {
+  userEmail: db.string().relation({
+    type: "1-1",
+    toward: { type: user, key: "email" },
+  }),
+  bio: db.string(),
+});
+```
+
+**Requirements**:
+- The target field (`email` in this example) **must have a unique constraint**
+- The relation field type must match the target field type
+
+## Self-Referencing Relations
+
+Types can reference themselves using `"self"`:
+
+```typescript
+export const category = db.type("Category", {
+  name: db.string(),
+  parentID: db.uuid({ optional: true }).relation({
+    type: "n-1",
+    toward: { type: "self", as: "parent" },
+    backward: "children",
+  }),
+});
+```
+
+**GraphQL schema**:
+
+```graphql
+type Category {
+  id: ID!
+  name: String!
+  parentID: ID
+  parent: Category  # Self-reference
+  children: [Category!]!  # Backward relation
+}
+```
+
+## Automatic Index Creation
+
+All relations automatically create database indexes on the source field:
+
+```typescript
+export const salesOrder = db.type("SalesOrder", {
+  customerID: db.uuid().relation({
+    type: "n-1",
+    toward: { type: customer },
+  }),
+  // Index automatically created on customerID
+});
+```
+
+You can add additional composite indexes if needed:
+
+```typescript
+export const salesOrder = db.type("SalesOrder", {
+  customerID: db.uuid().relation({
+    type: "n-1",
+    toward: { type: customer },
+  }),
+  status: db.string({ optional: true }),
+})
+  .indexes(
+    { fields: ["customerID", "status"], unique: false },
+  );
+```
+
+## Complete Example
+
+Here's a complete example showing multiple relation types:
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+
+// Parent type
+export const supplier = db.type("Supplier", {
+  name: db.string(),
+  email: db.string({ optional: true }),
+  ...db.fields.timestamps(),
+});
+export type supplier = typeof supplier;
+
+// Child type with relation
+export const purchaseOrder = db.type("PurchaseOrder", {
+  supplierID: db.uuid().relation({
+    type: "n-1",
+    toward: { type: supplier },
+  }),
+  totalPrice: db.int(),
+  discount: db.float({ optional: true }),
+  status: db.string(),
+  ...db.fields.timestamps(),
+});
+export type purchaseOrder = typeof purchaseOrder;
+```
+
+**Generated GraphQL**:
+
+```graphql
+type PurchaseOrder {
+  id: ID!
+  supplierID: ID!
+  supplier: Supplier  # Automatically generated
+  totalPrice: Int!
+  discount: Float
+  status: String!
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+
+type Supplier {
+  id: ID!
+  name: String!
+  email: String
+  purchaseOrders: [PurchaseOrder!]!  # Automatically generated
+  createdAt: DateTime!
+  updatedAt: DateTime
+}
+```
+
+## Relation Type Summary
+
+| Relation Type | Foreign Key | Index | Unique | GraphQL Relations |
+|--------------|-------------|-------|--------|-------------------|
+| `"n-1"` (many-to-one) | ✓ | ✓ | ✗ | ✓ (forward & backward) |
+| `"1-1"` (one-to-one) | ✓ | ✓ | ✓ | ✓ (forward & backward) |
+| `"keyOnly"` | ✓ | ✗ | ✗ | ✗ |
+
+## Best Practices
+
+1. **Use UUID fields for foreign keys**: Most relations use `db.uuid()` to reference the auto-generated `id` field
+2. **Always import parent types**: Import the type you're relating to at the top of the file
+3. **Name fields with ID suffix**: Convention is to name relation fields like `customerID`, `userID`, etc.
+4. **Export both value and type**: Always export both for TypeScript inference
+5. **Consider composite indexes**: Add indexes on commonly queried field combinations
+
+## See Also
+
+- [db.type()](/api/db-type) - Defining types
+- [Field Types](/api/db-fields) - Available field types
+- [Permissions](/api/db-permissions) - Access control for relations

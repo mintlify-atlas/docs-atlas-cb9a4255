@@ -1,0 +1,360 @@
+---
+title: Installation
+description: Install the Tailor Platform SDK and set up your development environment
+---
+
+## System requirements
+
+Before installing the SDK, ensure your system meets these requirements:
+
+- **Node.js 22 or later** - The SDK requires Node.js version 22 or higher
+- **npm, yarn, or pnpm** - Any of these package managers will work
+- **Git** - For version control (recommended)
+
+### Install Node.js
+
+If you don't have Node.js 22 or later installed:
+
+1. Visit the [official Node.js website](https://nodejs.org/)
+2. Download and install the latest LTS version (v22 or higher)
+3. Verify your installation:
+
+```bash
+node --version
+# Should output v22.0.0 or higher
+
+npm --version
+# Should output npm version
+```
+
+<Tip>
+  We recommend using a Node.js version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm) to easily switch between Node.js versions.
+</Tip>
+
+## Installation methods
+
+### Using create command (recommended)
+
+The fastest way to get started is using the `create` command to scaffold a new project:
+
+<CodeGroup>
+```bash npm
+npm create @tailor-platform/sdk -- --template hello-world my-app
+cd my-app
+```
+
+```bash yarn
+yarn create @tailor-platform/sdk --template hello-world my-app
+cd my-app
+```
+
+```bash pnpm
+pnpm create @tailor-platform/sdk --template hello-world my-app
+cd my-app
+```
+</CodeGroup>
+
+<Note>
+  npm 7+ requires `--` before create-sdk options (for example, `--template`).
+</Note>
+
+**What this does:**
+
+1. Creates a new directory with your project name
+2. Scaffolds a project using the selected template
+3. Installs all necessary dependencies
+4. Initializes a Git repository
+
+### Adding to an existing project
+
+If you want to add the SDK to an existing Node.js project:
+
+<CodeGroup>
+```bash npm
+npm install @tailor-platform/sdk
+```
+
+```bash yarn
+yarn add @tailor-platform/sdk
+```
+
+```bash pnpm
+pnpm add @tailor-platform/sdk
+```
+</CodeGroup>
+
+Then create a `tailor.config.ts` file in your project root:
+
+```typescript tailor.config.ts
+import { defineConfig } from "@tailor-platform/sdk";
+
+export default defineConfig({
+  name: "my-app",
+  db: { "main-db": { files: ["./db/*.ts"] } },
+  resolver: { "main-resolver": { files: ["./resolvers/**/*.ts"] } },
+});
+```
+
+## Available templates
+
+When using the create command, you can choose from these templates:
+
+<CardGroup cols={2}>
+  <Card title="hello-world" icon="rocket">
+    **Minimal starter project**
+    
+    Perfect for learning the basics. Includes:
+    - Simple resolver example
+    - Basic project configuration
+    - User database type
+  </Card>
+
+  <Card title="inventory-management" icon="boxes-stacked">
+    **Full-featured sample application**
+    
+    Production-ready patterns. Includes:
+    - Complex TailorDB schemas
+    - Custom resolvers with business logic
+    - Event-driven executors
+    - Role-based permissions
+  </Card>
+
+  <Card title="testing" icon="flask">
+    **Testing patterns guide**
+    
+    Learn how to test your SDK code. Includes:
+    - Unit test examples with Vitest
+    - E2E test setup
+    - Mock patterns for TailorDB
+    - CI/CD integration
+  </Card>
+
+  <Card title="multi-application" icon="layer-group">
+    **Multi-app architecture**
+    
+    Share resources across apps. Includes:
+    - Multiple application setup
+    - Shared database patterns
+    - External resource references
+  </Card>
+</CardGroup>
+
+### Template usage
+
+Specify a template with the `--template` flag:
+
+```bash
+npm create @tailor-platform/sdk -- --template inventory-management my-store
+```
+
+If you don't specify a template, you'll be prompted to choose one interactively.
+
+## Post-installation setup
+
+### Authenticate with Tailor Platform
+
+After creating your project, authenticate with the Tailor Platform:
+
+```bash
+npx tailor-sdk login
+```
+
+This opens your browser to complete authentication and stores your credentials in `~/.config/tailor-platform/config.yaml`.
+
+### Create a workspace
+
+Every application needs a workspace. Create one with:
+
+```bash
+npx tailor-sdk workspace create --name my-workspace --region us-east-1
+```
+
+**Available regions:**
+- `us-east-1` - US East (N. Virginia)
+- `eu-west-1` - Europe (Ireland)
+- `ap-northeast-1` - Asia Pacific (Tokyo)
+
+List your workspaces to get the workspace ID:
+
+```bash
+npx tailor-sdk workspace list
+```
+
+<Tip>
+  Save your workspace ID in an `.env` file:
+  ```bash
+  TAILOR_PLATFORM_WORKSPACE_ID=your-workspace-id
+  ```
+  This allows you to deploy without specifying `--workspace-id` every time.
+</Tip>
+
+### Environment variables
+
+Create an `.env` file in your project root for environment-specific configuration:
+
+```bash .env
+TAILOR_PLATFORM_WORKSPACE_ID=your-workspace-id
+TAILOR_PLATFORM_PROFILE=default
+```
+
+**Available environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `TAILOR_PLATFORM_WORKSPACE_ID` | Your workspace ID for deployments |
+| `TAILOR_PLATFORM_TOKEN` | Authentication token (alternative to login) |
+| `TAILOR_PLATFORM_PROFILE` | Workspace profile name |
+| `TAILOR_PLATFORM_SDK_CONFIG_PATH` | Custom path to `tailor.config.ts` |
+| `EDITOR` | Editor for opening generated files |
+
+## Verify installation
+
+Verify that everything is set up correctly:
+
+<Steps>
+  <Step title="Check SDK version">
+    ```bash
+    npx tailor-sdk --version
+    ```
+  </Step>
+
+  <Step title="Generate types">
+    ```bash
+    npm run generate
+    ```
+    
+    This should generate type definitions in your project without errors.
+  </Step>
+
+  <Step title="Build configuration">
+    ```bash
+    npm run build
+    ```
+    
+    This validates your TypeScript configuration and ensures there are no syntax errors.
+  </Step>
+</Steps>
+
+## Development dependencies
+
+### Required dependencies
+
+When using generated types in your resolvers, executors, or workflows, install these dependencies:
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @tailor-platform/function-types
+```
+
+```bash yarn
+yarn add -D @tailor-platform/function-types
+```
+
+```bash pnpm
+pnpm add -D @tailor-platform/function-types
+```
+</CodeGroup>
+
+### For database queries
+
+If you're using the Kysely type plugin for type-safe database queries:
+
+<CodeGroup>
+```bash npm
+npm install @tailor-platform/kysely-type
+```
+
+```bash yarn
+yarn add @tailor-platform/kysely-type
+```
+
+```bash pnpm
+pnpm add @tailor-platform/kysely-type
+```
+</CodeGroup>
+
+## IDE setup
+
+### Visual Studio Code
+
+For the best development experience in VS Code:
+
+1. Install the [TypeScript extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-typescript-next)
+2. Enable TypeScript IntelliSense in your workspace settings
+3. Add a `tsconfig.json` if not already present:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+### Other editors
+
+The SDK works with any editor that supports TypeScript:
+- **WebStorm/IntelliJ IDEA** - Built-in TypeScript support
+- **Vim/Neovim** - Use [coc-tsserver](https://github.com/neoclide/coc-tsserver) or [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig)
+- **Sublime Text** - Install [LSP-typescript](https://github.com/sublimelsp/LSP-typescript)
+
+## Troubleshooting
+
+### Node.js version mismatch
+
+If you see an error about Node.js version:
+
+```bash
+Error: The SDK requires Node.js 22 or later
+```
+
+Upgrade Node.js to version 22 or higher. If using nvm:
+
+```bash
+nvm install 22
+nvm use 22
+```
+
+### Permission errors on npm install
+
+If you encounter permission errors during installation:
+
+1. Don't use `sudo` with npm
+2. Configure npm to use a different directory:
+   ```bash
+   mkdir ~/.npm-global
+   npm config set prefix '~/.npm-global'
+   ```
+3. Add to your `~/.bashrc` or `~/.zshrc`:
+   ```bash
+   export PATH=~/.npm-global/bin:$PATH
+   ```
+
+### Git initialization skipped
+
+If git initialization is skipped:
+
+- The project already exists within a git repository
+- Git is not installed on your system
+- Install git from [git-scm.com](https://git-scm.com/) to enable version control
+
+## Next steps
+
+Now that you have the SDK installed:
+
+<CardGroup cols={2}>
+  <Card title="Follow the quickstart" icon="play" href="/quickstart">
+    Create and deploy your first application
+  </Card>
+  <Card title="Learn about configuration" icon="gear" href="/concepts/configuration">
+    Understand how to configure your application
+  </Card>
+</CardGroup>

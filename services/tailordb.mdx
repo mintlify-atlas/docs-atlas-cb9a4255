@@ -1,0 +1,510 @@
+---
+title: TailorDB
+description: Type-safe database service for defining and managing data models on the Tailor Platform
+---
+
+TailorDB is a type-safe database service that provides automatic GraphQL API generation, relations with foreign key constraints, and a powerful permission system.
+
+## Overview
+
+TailorDB provides:
+
+- Type-safe schema definitions using TypeScript
+- Automatic GraphQL API generation (CRUD operations)
+- Relations between types with automatic index and foreign key constraints
+- Permission system for access control
+- Field-level hooks and validations
+
+For the official Tailor Platform documentation, see [TailorDB Guide](https://docs.tailor.tech/guides/tailordb/overview).
+
+## Type Definition
+
+Define TailorDB Types in files matching glob patterns specified in `tailor.config.ts`.
+
+<Note>
+**Definition Rules:**
+- **Multiple types per file**: You can define multiple TailorDB types in a single file
+- **Export method**: Use named exports (`export const`)
+- **Export both value and type**: Always export both the runtime value and TypeScript type
+- **Uniqueness**: Type names must be unique across all TailorDB files
+</Note>
+
+```typescript
+import { db } from "@tailor-platform/sdk";
+
+// Export both value and type
+export const user = db.type("User", {
+  name: db.string(),
+  email: db.string().unique(),
+  age: db.int(),
+  ...db.fields.timestamps(),
+});
+export type user = typeof user;
+
+// You can define multiple types in the same file
+export const role = db.type("Role", {
+  name: db.string().unique(),
+});
+export type role = typeof role;
+```
+
+### Type Name Customization
+
+Specify plural form by passing an array as first argument:
+
+```typescript
+db.type(["User", "UserList"], {
+  name: db.string(),
+});
+```
+
+Pass a description as second argument:
+
+```typescript
+db.type("User", "User in the system", {
+  name: db.string(),
+});
+```
+
+## Field Types
+
+TailorDB supports various field types with TypeScript type safety:
+
+<ParamField path="db.string()" type="String">
+  String field type
+</ParamField>
+
+<ParamField path="db.int()" type="Integer">
+  Integer field type
+</ParamField>
+
+<ParamField path="db.float()" type="Float">
+  Floating point number field type
+</ParamField>
+
+<ParamField path="db.bool()" type="Boolean">
+  Boolean field type
+</ParamField>
+
+<ParamField path="db.date()" type="Date">
+  Date field type (string in TypeScript)
+</ParamField>
+
+<ParamField path="db.datetime()" type="DateTime">
+  DateTime field type (string | Date in TypeScript)
+</ParamField>
+
+<ParamField path="db.time()" type="Time">
+  Time field type (string in TypeScript)
+</ParamField>
+
+<ParamField path="db.uuid()" type="UUID">
+  UUID field type (string in TypeScript)
+</ParamField>
+
+<ParamField path="db.enum()" type="Enum">
+  Enum field type with predefined values
+</ParamField>
+
+<ParamField path="db.object()" type="Nested Object">
+  Nested object field type
+</ParamField>
+
+### Optional and Array Fields
+
+```typescript
+db.string({ optional: true });
+db.string({ array: true });
+db.string({ optional: true, array: true });
+```
+
+### Enum Fields
+
+```typescript
+db.enum(["red", "green", "blue"]);
+db.enum([
+  { value: "active", description: "Active status" },
+  { value: "inactive", description: "Inactive status" },
+]);
+```
+
+### Object Fields
+
+Define nested object structures:
+
+```typescript example/tailordb/nested.ts
+import { db } from "@tailor-platform/sdk";
+
+export const nestedProfile = db.type("NestedProfile", "Nested Profile Type", {
+  userInfo: db
+    .object({
+      name: db.string().description("User's full name"),
+      age: db.int({ optional: true }).description("User's age"),
+      bio: db.string({ optional: true }).description("User's biography"),
+      email: db.string().description("User's email address"),
+      phone: db.string({ optional: true }).description("User's phone number"),
+    })
+    .description("User information"),
+  metadata: db
+    .object({
+      created: db.datetime().description("Creation timestamp"),
+      lastUpdated: db.datetime({ optional: true }).description("Last update timestamp"),
+      version: db.int().description("Version number"),
+    })
+    .description("Profile metadata"),
+  archived: db.bool({ optional: true }).description("Archive status"),
+  ...db.fields.timestamps(),
+});
+```
+
+## Field Modifiers
+
+### Description
+
+```typescript
+db.string().description("User's full name");
+```
+
+### Index / Unique
+
+```typescript
+db.string().index();
+db.string().unique();
+```
+
+### Relations
+
+Add a relation to field with automatic index and foreign key constraint:
+
+```typescript example/tailordb/salesOrder.ts
+import { db } from "@tailor-platform/sdk";
+import { customer } from "./customer";
+import { user } from "./user";
+
+export const salesOrder = db.type(["SalesOrder", "SalesOrderList"], {
+  customerID: db.uuid().relation({
+    type: "n-1",
+    toward: { type: customer },
+  }),
+  approvedByUserIDs: db.uuid({ optional: true, array: true }).relation({
+    type: "keyOnly",
+    toward: { type: user },
+  }),
+  totalPrice: db.int({ optional: true }),
+  discount: db.float({ optional: true }),
+  status: db.string({ optional: true }),
+  cancelReason: db.string({ optional: true }),
+  canceledAt: db.datetime({ optional: true }),
+  ...db.fields.timestamps(),
+});
+```
+
+<Note>
+**Relation Types:**
+- `"n-1"` - Many-to-one relation (creates relation field in both directions)
+- `"1-1"` - One-to-one relation
+- `"keyOnly"` - Foreign key constraint without creating a relation field
+</Note>
+
+Create relations against different fields using `toward.key`:
+
+```typescript
+const user = db.type("User", {
+  email: db.string().unique(),
+});
+
+const userProfile = db.type("UserProfile", {
+  userEmail: db.string().relation({
+    type: "1-1",
+    toward: { type: user, key: "email" },
+  }),
+});
+```
+
+Customize relation names using `toward.as` / `backward` options:
+
+```typescript
+const userProfile = db.type("UserProfile", {
+  userId: db.uuid().relation({
+    type: "1-1",
+    toward: { type: user, as: "base" },
+    backward: "profile",
+  }),
+});
+```
+
+This generates the following GraphQL types:
+
+```graphql
+type UserProfile {
+  userId: ID!
+  base: User # toward.as: access User from UserProfile
+}
+
+type User {
+  id: ID!
+  profile: UserProfile # backward: access UserProfile from User
+}
+```
+
+### Hooks
+
+Add hooks to execute functions during data creation or update. Hooks receive three arguments:
+
+- `value`: User input if provided, otherwise existing value on update or null on create
+- `data`: Entire record data (for accessing other field values)
+- `user`: User performing the operation
+
+#### Field-level Hooks
+
+Set hooks directly on individual fields:
+
+```typescript
+db.string().hooks({
+  create: ({ user }) => user.id,
+  update: ({ value }) => value,
+});
+```
+
+<Note>
+When setting hooks at the field level, the `data` argument type is `unknown` since the field doesn't know about other fields in the type. Use type-level hooks if you need to access other fields with type safety.
+</Note>
+
+#### Type-level Hooks
+
+Set hooks for multiple fields at once using `db.type().hooks()`:
+
+```typescript example/tailordb/customer.ts
+import { db } from "@tailor-platform/sdk";
+
+export const customer = db
+  .type("Customer", "Customer information", {
+    name: db.string(),
+    email: db.string(),
+    phone: db.string({ optional: true }),
+    country: db.string(),
+    postalCode: db.string(),
+    address: db.string({ optional: true }),
+    city: db.string({ optional: true }),
+    fullAddress: db.string(),
+    state: db.string(),
+    ...db.fields.timestamps(),
+  })
+  .hooks({
+    fullAddress: {
+      create: ({ data }) => `${data.postalCode} ${data.address} ${data.city}`,
+      update: ({ data }) => `${data.postalCode} ${data.address} ${data.city}`,
+    },
+  });
+```
+
+<Warning>
+**Important:** Field-level and type-level hooks cannot coexist on the same field. TypeScript will prevent this at compile time.
+</Warning>
+
+### Validation
+
+Add validation rules to fields. Validators receive three arguments (executed after hooks):
+
+- `value`: Field value after hook transformation
+- `data`: Entire record data after hook transformations
+- `user`: User performing the operation
+
+Validators return `true` for success, `false` for failure. Use array form `[validator, errorMessage]` for custom error messages.
+
+#### Field-level Validation
+
+```typescript
+db.string().validate(
+  ({ value }) => value.includes("@"),
+  [({ value }) => value.length >= 5, "Email must be at least 5 characters"],
+);
+```
+
+#### Type-level Validation
+
+```typescript example/tailordb/customer.ts
+export const customer = db
+  .type("Customer", "Customer information", {
+    name: db.string(),
+    email: db.string(),
+    city: db.string({ optional: true }).validate(
+      ({ value }) => (value ? value.length > 1 : true),
+      ({ value }) => (value ? value.length < 100 : true),
+    ),
+  })
+  .validate({
+    name: [({ value }) => value.length > 5, "Name must be longer than 5 characters"],
+  });
+```
+
+<Warning>
+**Important:** Field-level and type-level validation cannot coexist on the same field. TypeScript will prevent this at compile time.
+</Warning>
+
+### Vector Search
+
+```typescript
+db.string().vector();
+```
+
+### Serial / Auto-increment
+
+```typescript
+db.int().serial({
+  start: 0,
+  maxValue: 100,
+});
+
+db.string().serial({
+  start: 0,
+  format: "CUST_%d",
+});
+```
+
+### Common Fields
+
+```typescript
+export const user = db.type("User", {
+  name: db.string(),
+  ...db.fields.timestamps(),
+});
+```
+
+## Type Modifiers
+
+### Composite Indexes
+
+```typescript example/tailordb/user.ts
+import { db } from "@tailor-platform/sdk";
+
+export const user = db
+  .type("User", {
+    name: db.string(),
+    email: db.string().unique(),
+    status: db.string({ optional: true }),
+    department: db.string({ optional: true }),
+    role: db.enum(["MANAGER", "STAFF"]),
+    ...db.fields.timestamps(),
+  })
+  .indexes(
+    { fields: ["name", "department"], unique: false },
+    { fields: ["status", "createdAt"], unique: false, name: "user_status_created_idx" },
+  );
+```
+
+### File Fields
+
+```typescript example/tailordb/salesOrder.ts
+db.type("SalesOrder", {
+  totalPrice: db.int(),
+  status: db.string(),
+})
+.files({
+  receipt: "receipt file",
+  form: "order form file",
+});
+```
+
+### Features
+
+```typescript
+db.type("User", {
+  name: db.string(),
+})
+.features({
+  aggregation: true,
+  bulkUpsert: true,
+});
+```
+
+### Permissions
+
+Configure Permission and GQLPermission. For details, see the [TailorDB Permission documentation](https://docs.tailor.tech/guides/tailordb/permission).
+
+<Warning>
+**Important**: Following the secure-by-default principle, all operations are denied if permissions are not configured. You must explicitly grant permissions for each operation (create, read, update, delete).
+</Warning>
+
+```typescript example/tailordb/permissions.ts
+import type {
+  PermissionCondition,
+  TailorTypePermission,
+  TailorTypeGqlPermission,
+} from "@tailor-platform/sdk";
+
+const defaultMachineUser = [
+  { user: "role" },
+  "=",
+  "MANAGER",
+] as const satisfies PermissionCondition;
+const loggedIn = [{ user: "_loggedIn" }, "=", true] as const satisfies PermissionCondition;
+
+export const defaultPermission: TailorTypePermission = {
+  create: [defaultMachineUser],
+  read: [defaultMachineUser, loggedIn],
+  update: [defaultMachineUser],
+  delete: [defaultMachineUser],
+};
+
+export const defaultGqlPermission: TailorTypeGqlPermission = [
+  {
+    conditions: [defaultMachineUser],
+    actions: ["create", "read", "update", "delete", "aggregate", "bulkUpsert"],
+    permit: true,
+  },
+  {
+    conditions: [loggedIn],
+    actions: ["read"],
+    permit: true,
+  },
+];
+```
+
+#### Development/Test Helpers
+
+For local development, prototyping, or testing, the SDK provides helper constants that grant full access without conditions:
+
+```typescript
+import {
+  db,
+  unsafeAllowAllTypePermission,
+  unsafeAllowAllGqlPermission,
+} from "@tailor-platform/sdk";
+
+db.type("User", {
+  name: db.string(),
+})
+  .permission(unsafeAllowAllTypePermission)
+  .gqlPermission(unsafeAllowAllGqlPermission);
+```
+
+<Warning>
+Do not use `unsafeAllowAllTypePermission` or `unsafeAllowAllGqlPermission` in production environments as they effectively disable authorization checks.
+</Warning>
+
+## Complete Example
+
+```typescript example/tailordb/user.ts
+import { db } from "@tailor-platform/sdk";
+import { defaultGqlPermission, defaultPermission } from "./permissions";
+
+export const user = db
+  .type("User", {
+    name: db.string(),
+    email: db.string().unique(),
+    status: db.string({ optional: true }),
+    department: db.string({ optional: true }),
+    role: db.enum(["MANAGER", "STAFF"]),
+    ...db.fields.timestamps(),
+  })
+  .files({ avatar: "profile image" })
+  .indexes(
+    { fields: ["name", "department"], unique: false },
+    { fields: ["status", "createdAt"], unique: false, name: "user_status_created_idx" },
+  )
+  .permission(defaultPermission)
+  .gqlPermission(defaultGqlPermission);
+
+export type user = typeof user;
+```

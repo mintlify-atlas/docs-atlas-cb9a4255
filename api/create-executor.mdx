@@ -1,0 +1,470 @@
+---
+title: createExecutor
+description: Create event-driven handlers that automatically trigger in response to data changes, schedules, or external events.
+---
+
+## Overview
+
+The `createExecutor` function creates event-driven handlers that automatically respond to record changes, resolver executions, schedules, or incoming webhooks. Executors support multiple operation types including functions, webhooks, GraphQL queries, and workflows.
+
+## Function Signature
+
+```typescript
+function createExecutor<
+  T extends Trigger<unknown>,
+  O extends Operation<TriggerArgs<T>> | { kind: "workflow"; workflow: Workflow }
+>(config: {
+  name: string;
+  description?: string;
+  trigger: T;
+  operation: O;
+}): Executor<T, O>
+```
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  Unique executor name globally across your entire application.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Optional description of the executor's purpose.
+</ParamField>
+
+<ParamField path="trigger" type="Trigger" required>
+  Event that triggers the executor. See [Trigger Types](#trigger-types) for available options.
+</ParamField>
+
+<ParamField path="operation" type="Operation" required>
+  Action to perform when triggered. See [Operation Types](#operation-types) for available options.
+</ParamField>
+
+## Trigger Types
+
+### Record Triggers
+
+Fire when records are created, updated, or deleted in TailorDB:
+
+#### recordCreatedTrigger
+
+```typescript
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+
+recordCreatedTrigger({
+  type: user,
+  condition: ({ newRecord }) => newRecord.email.endsWith("@tailor.tech")
+})
+```
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for record creation events.
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function. Receives `{ newRecord, workspaceId, appNamespace, typeName, env, actor }`.
+</ParamField>
+
+#### recordUpdatedTrigger
+
+```typescript
+recordUpdatedTrigger({
+  type: order,
+  condition: ({ newRecord, oldRecord }) =>
+    newRecord.status === "completed" && oldRecord.status !== "completed"
+})
+```
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for record update events.
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function. Receives `{ newRecord, oldRecord, workspaceId, appNamespace, typeName, env, actor }`.
+</ParamField>
+
+#### recordDeletedTrigger
+
+```typescript
+recordDeletedTrigger({
+  type: user,
+  condition: ({ oldRecord }) => oldRecord.isPremium
+})
+```
+
+<ParamField path="type" type="TailorDBType" required>
+  The TailorDB type to monitor for record deletion events.
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function. Receives `{ oldRecord, workspaceId, appNamespace, typeName, env, actor }`.
+</ParamField>
+
+### scheduleTrigger
+
+Fires on a cron schedule:
+
+```typescript
+import { scheduleTrigger } from "@tailor-platform/sdk";
+
+scheduleTrigger({ cron: "*/5 * * * *" })  // Every 5 minutes
+scheduleTrigger({ cron: "0 9 * * 1" })    // Every Monday at 9am
+scheduleTrigger({ cron: "0 0 1 * *" })    // First day of every month
+scheduleTrigger({ cron: "0 * * * *", timezone: "Asia/Tokyo" })
+```
+
+<ParamField path="cron" type="string" required>
+  Standard cron expression (5 fields: minute, hour, day, month, weekday).
+</ParamField>
+
+<ParamField path="timezone" type="string">
+  IANA timezone name (e.g., "America/New_York", "Europe/London", "Asia/Tokyo"). Defaults to UTC.
+</ParamField>
+
+### incomingWebhookTrigger
+
+Fires when an external webhook is received:
+
+```typescript
+import { incomingWebhookTrigger } from "@tailor-platform/sdk";
+
+incomingWebhookTrigger<{
+  body: { message: string };
+  headers: Record<string, string>;
+}>()
+```
+
+Provides `{ body, headers, method, rawBody, env }` to the operation.
+
+### resolverExecutedTrigger
+
+Fires when a resolver is executed:
+
+```typescript
+import { resolverExecutedTrigger } from "@tailor-platform/sdk";
+import { createOrderResolver } from "../resolvers/create-order";
+
+resolverExecutedTrigger({
+  resolver: createOrderResolver,
+  condition: ({ success, result }) => success && !!result?.order?.id
+})
+```
+
+<ParamField path="resolver" type="ResolverConfig" required>
+  The resolver to monitor for execution events.
+</ParamField>
+
+<ParamField path="condition" type="function">
+  Optional filter function. Receives `{ success, result?, error?, resolverName, workspaceId, appNamespace, env, actor }`.
+</ParamField>
+
+### Additional Triggers
+
+Executors also support triggers for IdP users and auth access tokens:
+
+- `idpUserCreatedTrigger()` - IdP user creation
+- `idpUserUpdatedTrigger()` - IdP user update
+- `idpUserDeletedTrigger()` - IdP user deletion
+- `authAccessTokenIssuedTrigger()` - Access token issued
+- `authAccessTokenRefreshedTrigger()` - Access token refreshed
+- `authAccessTokenRevokedTrigger()` - Access token revoked
+
+## Operation Types
+
+### Function Operation
+
+Execute JavaScript/TypeScript functions:
+
+```typescript
+{
+  kind: "function",
+  body: async (args) => {
+    // args contains trigger-specific data (newRecord, oldRecord, etc.)
+    console.log("Record created:", args.newRecord);
+  }
+}
+```
+
+<ParamField path="kind" type="'function'" required>
+  Identifies this as a function operation.
+</ParamField>
+
+<ParamField path="body" type="function" required>
+  Function to execute. Receives trigger-specific arguments (e.g., `{ newRecord }` for `recordCreatedTrigger`).
+</ParamField>
+
+### Job Function Operation
+
+For long-running operations that run asynchronously with extended execution times:
+
+```typescript
+{
+  kind: "jobFunction",
+  body: async (args) => {
+    const db = getDB("tailordb");
+    // Long-running report generation logic
+    const records = await db.selectFrom("Order").selectAll().execute();
+    // Process records...
+  }
+}
+```
+
+<Note>
+  Use `jobFunction` for operations that may take longer than a few seconds. See [Job Function Operation](https://docs.tailor.tech/guides/executor/job-function-operation) for details.
+</Note>
+
+### Webhook Operation
+
+Call external webhooks with dynamic data:
+
+```typescript
+{
+  kind: "webhook",
+  url: ({ typeName }) => `https://api.example.com/webhooks/${typeName}`,
+  headers: {
+    "Content-Type": "application/json",
+    "X-API-Key": { vault: "api-keys", key: "external-api" }
+  },
+  requestBody: ({ newRecord }) => ({
+    id: newRecord.id,
+    timestamp: new Date(),
+    data: newRecord
+  })
+}
+```
+
+<ParamField path="kind" type="'webhook'" required>
+  Identifies this as a webhook operation.
+</ParamField>
+
+<ParamField path="url" type="function" required>
+  Function that returns the webhook URL. Receives trigger arguments.
+</ParamField>
+
+<ParamField path="headers" type="object">
+  HTTP headers to include. Values can be strings or vault references `{ vault: "name", key: "key" }`.
+</ParamField>
+
+<ParamField path="requestBody" type="function">
+  Function that returns the request body. Receives trigger arguments.
+</ParamField>
+
+### GraphQL Operation
+
+Execute GraphQL queries and mutations:
+
+```typescript
+{
+  kind: "graphql",
+  appName: "my-app",
+  query: `
+    mutation UpdateUserStatus($id: ID!, $status: String!) {
+      updateUser(id: $id, input: { status: $status }) {
+        id
+        status
+        updatedAt
+      }
+    }
+  `,
+  variables: ({ newRecord }) => ({
+    id: newRecord.userId,
+    status: "active"
+  })
+}
+```
+
+<ParamField path="kind" type="'graphql'" required>
+  Identifies this as a GraphQL operation.
+</ParamField>
+
+<ParamField path="appName" type="string">
+  Optional app name to target. Defaults to current app.
+</ParamField>
+
+<ParamField path="query" type="string" required>
+  GraphQL query or mutation string.
+</ParamField>
+
+<ParamField path="variables" type="function">
+  Function that returns GraphQL variables. Receives trigger arguments.
+</ParamField>
+
+<ParamField path="authInvoker" type="AuthInvoker">
+  Optional machine user for authentication. See [Authentication for Operations](#authentication-for-operations).
+</ParamField>
+
+### Workflow Operation
+
+Trigger workflows from executors:
+
+```typescript
+import processOrderWorkflow from "../workflows/process-order";
+
+{
+  kind: "workflow",
+  workflow: processOrderWorkflow,
+  args: ({ newRecord }) => ({
+    orderId: newRecord.id,
+    customerId: newRecord.customerId
+  })
+}
+```
+
+<ParamField path="kind" type="'workflow'" required>
+  Identifies this as a workflow operation.
+</ParamField>
+
+<ParamField path="workflow" type="Workflow" required>
+  The workflow to trigger (imported from workflow files).
+</ParamField>
+
+<ParamField path="args" type="function | object">
+  Workflow arguments. Can be a static object or function receiving trigger arguments.
+</ParamField>
+
+<ParamField path="authInvoker" type="AuthInvoker">
+  Optional machine user for authentication. See [Authentication for Operations](#authentication-for-operations).
+</ParamField>
+
+## Authentication for Operations
+
+GraphQL and Workflow operations can specify an `authInvoker` to execute with machine user credentials:
+
+```typescript
+import { defineAuth, createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+
+const auth = defineAuth("my-auth", {
+  // ... auth configuration
+  machineUsers: {
+    "batch-processor": {
+      attributes: { role: "ADMIN" },
+    },
+  },
+});
+
+export default createExecutor({
+  name: "scheduled-cleanup",
+  trigger: scheduleTrigger({ cron: "0 0 * * *" }),
+  operation: {
+    kind: "graphql",
+    query: `mutation { cleanupOldRecords { count } }`,
+    authInvoker: auth.invoker("batch-processor"),
+  },
+});
+```
+
+## Examples
+
+### Record Created Trigger with Function
+
+```typescript title="executors/userCreated.ts" /home/daytona/workspace/source/example/executors/userCreated.ts:5-18
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+import userRecordLog from "./userRecordLog";
+
+export default createExecutor({
+  name: "user-created",
+  description: "Triggered when a new user is created",
+  trigger: recordCreatedTrigger({
+    type: user,
+    condition: ({ newRecord }) => newRecord.email.endsWith("@tailor.tech"),
+  }),
+  operation: {
+    kind: "function",
+    body: async (args) => {
+      await userRecordLog(args);
+    },
+  },
+});
+```
+
+### Schedule Trigger with Workflow
+
+```typescript title="executors/dailyWorkflow.ts" /home/daytona/workspace/source/example/executors/dailyWorkflow.ts:4-16
+import { createExecutor, scheduleTrigger } from "@tailor-platform/sdk";
+import sampleWorkflow from "../workflows/sample";
+
+export default createExecutor({
+  name: "daily-workflow",
+  description: "Scheduled workflow executor",
+  trigger: scheduleTrigger({
+    cron: "0 12 * * *",
+    timezone: "Asia/Tokyo",
+  }),
+  operation: {
+    kind: "workflow",
+    workflow: sampleWorkflow,
+    args: () => ({ orderId: "daily-workflow-order" }),
+  },
+});
+```
+
+### Incoming Webhook Trigger
+
+```typescript title="executors/testWebhook.ts" /home/daytona/workspace/source/example/executors/testWebhook.ts:4-17
+import { createExecutor, incomingWebhookTrigger } from "@tailor-platform/sdk";
+
+export default createExecutor({
+  name: "test-webhook",
+  description: "Test executor for incoming webhook trigger",
+  trigger: incomingWebhookTrigger<{
+    body: { message: string };
+    headers: Record<string, string>;
+  }>(),
+  operation: {
+    kind: "function",
+    body: (args) => {
+      console.log("Webhook received:", args.body);
+      console.log("Headers:", args.headers);
+    },
+  },
+});
+```
+
+### GraphQL Operation
+
+```typescript title="executors/salesOrderCreated.ts" /home/daytona/workspace/source/example/executors/salesOrderCreated.ts:4-29
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { salesOrder } from "../tailordb/salesOrder";
+
+export default createExecutor({
+  name: "sales-order-created",
+  description: "Triggered when a new sales order is created",
+  trigger: recordCreatedTrigger({
+    type: salesOrder,
+    condition: ({ newRecord }) => (newRecord.totalPrice ?? 0) > 100_0000,
+  }),
+  operation: {
+    kind: "graphql",
+    query: /* gql */ `
+      mutation createSalesOrderCreated($input: SalesOrderCreatedCreateInput!) {
+        createSalesOrderCreated(input: $input) {
+          id
+        }
+      }
+    `,
+    variables: ({ newRecord }) => ({
+      input: {
+        salesOrderID: newRecord.id,
+        customerID: newRecord.customerID,
+        totalPrice: newRecord.totalPrice,
+        status: newRecord.status,
+      },
+    }),
+  },
+});
+```
+
+## Definition Rules
+
+<Warning>
+  - **One executor per file**: Each file must contain exactly one executor definition
+  - **Export method**: Must use `export default`
+  - **Global uniqueness**: Executor names must be unique globally across your entire application
+</Warning>
+
+## See Also
+
+- [Tailor Platform Executor Guide](https://docs.tailor.tech/guides/executor/overview) - Official documentation
+- [createWorkflow](/api/create-workflow) - Trigger workflows from executors
+- [createResolver](/api/create-resolver) - Use resolvers with `resolverExecutedTrigger`

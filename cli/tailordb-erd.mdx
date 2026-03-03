@@ -1,0 +1,359 @@
+---
+title: tailordb erd
+description: Generate, serve, and deploy Entity Relationship Diagrams for TailorDB schemas
+---
+
+<Warning>
+TailorDB ERD features are currently in beta and may introduce breaking changes in future releases.
+</Warning>
+
+The `tailordb erd` commands help you generate Entity Relationship Diagrams (ERDs) from your TailorDB schema using [Liam ERD](https://github.com/liam-hq/liam). These commands export schema artifacts, serve ERDs locally, and deploy them as static websites.
+
+## Commands
+
+### tailordb erd export
+
+Export Liam ERD distribution files from your applied TailorDB schema.
+
+```bash
+tailor-sdk tailordb erd export [options]
+```
+
+#### Options
+
+<ParamField path="--workspace-id" type="string" default="-w">
+  Workspace ID for the operation
+</ParamField>
+
+<ParamField path="--profile" type="string" default="-p">
+  Workspace profile to use
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="-n">
+  TailorDB namespace name (optional if only one namespace is defined in config)
+</ParamField>
+
+<ParamField path="--output" type="string" default=".tailor-sdk/erd">
+  Output directory path for tbls-compatible ERD JSON (writes to `<outputDir>/<namespace>/schema.json`)
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="false">
+  Output results as JSON
+</ParamField>
+
+#### How It Works
+
+1. Fetches the applied TailorDB schema from your workspace
+2. Converts the schema to tbls-compatible JSON format
+3. Runs the Liam CLI (`liam erd build`) to generate static ERD files
+4. Outputs the built ERD distribution to `<outputDir>/<namespace>/dist`
+
+#### Examples
+
+```bash
+# Export ERD for all namespaces
+tailor-sdk tailordb erd export
+
+# Export for a specific namespace
+tailor-sdk tailordb erd export --namespace myNamespace
+
+# Export to custom directory
+tailor-sdk tailordb erd export --output ./erd-output
+
+# Get JSON output
+tailor-sdk tailordb erd export --json
+```
+
+#### Output
+
+The command generates the following structure:
+
+```
+.tailor-sdk/erd/
+└── <namespace>/
+    ├── schema.json          # tbls-compatible schema
+    └── dist/                # Liam ERD static files
+        ├── index.html
+        ├── assets/
+        └── ...
+```
+
+### tailordb erd serve
+
+Generate and serve ERD locally (combines `liam build` + `serve dist`).
+
+```bash
+tailor-sdk tailordb erd serve [options]
+```
+
+#### Options
+
+<ParamField path="--workspace-id" type="string" default="-w">
+  Workspace ID for the operation
+</ParamField>
+
+<ParamField path="--profile" type="string" default="-p">
+  Workspace profile to use
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="-n">
+  TailorDB namespace name (uses first namespace in config if not specified)
+</ParamField>
+
+#### How It Works
+
+1. Exports ERD artifacts (same as `erd export`)
+2. Starts a local development server using the `serve` package
+3. Opens the ERD in your browser (typically at `http://localhost:3000`)
+
+<Info>
+If multiple namespaces are found, the command serves the first one and displays commands to serve the others.
+</Info>
+
+#### Examples
+
+```bash
+# Serve ERD for default/first namespace
+tailor-sdk tailordb erd serve
+
+# Serve ERD for specific namespace
+tailor-sdk tailordb erd serve --namespace myNamespace
+
+# Serve with custom workspace
+tailor-sdk tailordb erd serve --workspace-id my-workspace-id
+```
+
+#### Requirements
+
+The `serve` package must be installed:
+
+```bash
+npm install serve
+# or
+pnpm add serve
+```
+
+### tailordb erd deploy
+
+Deploy ERD static website for TailorDB namespace(s) to the Tailor Platform.
+
+```bash
+tailor-sdk tailordb erd deploy [options]
+```
+
+#### Options
+
+<ParamField path="--workspace-id" type="string" default="-w">
+  Workspace ID for the operation
+</ParamField>
+
+<ParamField path="--profile" type="string" default="-p">
+  Workspace profile to use
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file
+</ParamField>
+
+<ParamField path="--namespace" type="string" default="-n">
+  TailorDB namespace name (optional - deploys all namespaces with erdSite if omitted)
+</ParamField>
+
+<ParamField path="--json" type="boolean" default="false">
+  Output deployment results as JSON
+</ParamField>
+
+#### How It Works
+
+1. Builds ERD artifacts for the specified namespace(s)
+2. Uploads the static files to the configured static website
+3. Returns the deployed URL
+
+#### Configuration
+
+Configure `erdSite` in `tailor.config.ts` for each namespace you want to deploy:
+
+```typescript
+export default defineConfig({
+  db: {
+    myNamespace: {
+      files: ["./tailordb/*.ts"],
+      erdSite: "my-erd-site-name", // Static website name for ERD deployment
+    },
+  },
+});
+```
+
+<Note>
+The `erdSite` value must match a static website name defined in your workspace.
+</Note>
+
+#### Examples
+
+```bash
+# Deploy ERD for all namespaces with erdSite configured
+tailor-sdk tailordb erd deploy
+
+# Deploy ERD for a specific namespace
+tailor-sdk tailordb erd deploy --namespace myNamespace
+
+# Deploy with JSON output
+tailor-sdk tailordb erd deploy --json
+
+# Deploy to specific workspace
+tailor-sdk tailordb erd deploy --workspace-id my-workspace-id
+```
+
+#### Output
+
+On success, the command displays:
+
+```
+ERD site "my-erd-site-name" deployed successfully.
+https://my-erd-site-name.workspace.tailorplatform.dev
+```
+
+## Complete Workflow Example
+
+### 1. Configure ERD Site
+
+Add `erdSite` to your TailorDB namespace configuration:
+
+```typescript
+// tailor.config.ts
+export default defineConfig({
+  name: "my-app",
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+      erdSite: "tailordb-erd",
+    },
+  },
+});
+```
+
+### 2. Preview Locally
+
+Generate and serve the ERD locally:
+
+```bash
+tailor-sdk tailordb erd serve
+```
+
+This opens a local development server where you can preview your ERD.
+
+### 3. Deploy to Production
+
+Once satisfied with the ERD, deploy it:
+
+```bash
+tailor-sdk tailordb erd deploy
+```
+
+Your ERD is now accessible at the provided URL.
+
+## Requirements
+
+### Dependencies
+
+The ERD commands require the following packages:
+
+```json
+{
+  "dependencies": {
+    "@liam-hq/cli": "latest"
+  },
+  "devDependencies": {
+    "serve": "latest"
+  }
+}
+```
+
+Install them with:
+
+```bash
+npm install @liam-hq/cli
+npm install -D serve
+# or
+pnpm add @liam-hq/cli
+pnpm add -D serve
+```
+
+### Configuration
+
+For deployment, you must:
+
+1. Define `erdSite` in your db namespace configuration
+2. Ensure the static website exists in your workspace
+3. Have appropriate permissions to deploy to the workspace
+
+## Troubleshooting
+
+### "No TailorDB namespaces found"
+
+**Cause:** No `db` configuration found in `tailor.config.ts`.
+
+**Solution:** Add TailorDB configuration:
+
+```typescript
+export default defineConfig({
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+    },
+  },
+});
+```
+
+### "No erdSite configured for namespace"
+
+**Cause:** The `erdSite` property is missing from the namespace configuration.
+
+**Solution:** Add `erdSite` to your db config:
+
+```typescript
+db: {
+  myNamespace: {
+    files: ["./tailordb/*.ts"],
+    erdSite: "my-erd-site-name",
+  },
+}
+```
+
+### "Failed to run @liam-hq/cli"
+
+**Cause:** The `@liam-hq/cli` package is not installed or not found.
+
+**Solution:** Install the package:
+
+```bash
+npm install @liam-hq/cli
+# or
+pnpm add @liam-hq/cli
+```
+
+### "serve CLI exited with a non-zero code"
+
+**Cause:** The `serve` package is not installed or encountered an error.
+
+**Solution:** Install the package:
+
+```bash
+npm install -D serve
+# or
+pnpm add -D serve
+```
+
+## See Also
+
+- [TailorDB Documentation](/services/tailordb) - Learn about TailorDB schema design
+- [staticwebsite deploy](/cli/static-website) - Deploy static websites
+- [Liam ERD](https://github.com/liam-hq/liam) - ERD visualization tool

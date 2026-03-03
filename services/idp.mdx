@@ -1,0 +1,187 @@
+---
+title: IdP (Identity Provider)
+description: Built-in identity provider service for managing user authentication
+---
+
+IdP is a built-in identity provider service for managing user authentication on the Tailor Platform.
+
+## Overview
+
+The Built-in IdP provides:
+
+- User registration and authentication
+- OAuth client management
+- Integration with Auth service
+
+For the official Tailor Platform documentation, see [Identity Provider Setup](https://docs.tailor.tech/tutorials/setup-auth/setup-identity-provider).
+
+## Configuration
+
+Configure the Built-in IdP using `defineIdp()`:
+
+<Note>
+**Definition Rules:**
+- **Multiple IdPs allowed**: You can define multiple IdP instances in your config file
+- **Configuration location**: Define in `tailor.config.ts` and add to the `idp` array
+- **Uniqueness**: IdP names must be unique across all IdP instances
+</Note>
+
+```typescript
+import { defineIdp, defineConfig } from "@tailor-platform/sdk";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["my-client"],
+});
+
+// You can define multiple IdPs
+const anotherIdp = defineIdp("another-idp", {
+  authorization: "loggedIn",
+  clients: ["another-client"],
+});
+
+export default defineConfig({
+  idp: [idp, anotherIdp], // Add all IdPs to the array
+});
+```
+
+## Options
+
+### authorization
+
+User management permissions. Controls who can manage users in the IdP.
+
+<CodeGroup>
+```typescript Logged-in users
+defineIdp("my-idp", {
+  authorization: "loggedIn", // Only logged-in users can manage
+});
+```
+
+```typescript Insecure (development)
+defineIdp("my-idp", {
+  authorization: "insecure", // Anyone can manage (development only)
+});
+```
+
+```typescript CEL expression
+defineIdp("my-idp", {
+  authorization: "user.role == 'admin'", // CEL expression
+});
+```
+</CodeGroup>
+
+<ParamField path="authorization" type="string" required>
+  **Values:**
+  - `"insecure"` - No authentication required (use only for development)
+  - `"loggedIn"` - Requires authenticated user
+  - CEL expression - Custom authorization logic
+</ParamField>
+
+### clients
+
+OAuth client names that can use this IdP:
+
+```typescript
+defineIdp("my-idp", {
+  clients: ["default-client", "mobile-client"],
+});
+```
+
+<ParamField path="clients" type="string[]" required>
+  Array of OAuth client names that are allowed to use this IdP
+</ParamField>
+
+## Using idp.provider()
+
+The `idp.provider()` method creates a type-safe reference to the IdP for use in Auth configuration. The client name is validated at compile time against the clients defined in the IdP.
+
+```typescript example/tailor.config.ts
+import { defineIdp, defineAuth, defineConfig } from "@tailor-platform/sdk";
+import { user } from "./tailordb/user";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+    attributes: { role: true },
+  },
+  // Type-safe: only "default-idp-client" is allowed
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+
+export default defineConfig({
+  idp: [idp],
+  auth,
+});
+```
+
+**Parameters:**
+
+<ParamField path="providerName" type="string" required>
+  Name for the provider reference
+</ParamField>
+
+<ParamField path="clientName" type="string" required>
+  Must be one of the clients defined in the IdP's `clients` array
+</ParamField>
+
+The second argument only accepts client names that were defined in the `clients` array of the IdP configuration.
+
+## Password Policy
+
+Configure password requirements for user authentication:
+
+```typescript example/tailor.config.ts
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+  userAuthPolicy: {
+    useNonEmailIdentifier: false,
+    allowSelfPasswordReset: true,
+    passwordRequireUppercase: true,
+    passwordRequireLowercase: true,
+    passwordRequireNonAlphanumeric: true,
+    passwordRequireNumeric: true,
+    passwordMinLength: 8,
+    passwordMaxLength: 128,
+  },
+});
+```
+
+<ParamField path="userAuthPolicy.useNonEmailIdentifier" type="boolean">
+  Whether to use non-email identifiers for usernames
+</ParamField>
+
+<ParamField path="userAuthPolicy.allowSelfPasswordReset" type="boolean">
+  Whether users can reset their own passwords
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordRequireUppercase" type="boolean">
+  Require at least one uppercase letter in passwords
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordRequireLowercase" type="boolean">
+  Require at least one lowercase letter in passwords
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordRequireNonAlphanumeric" type="boolean">
+  Require at least one special character in passwords
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordRequireNumeric" type="boolean">
+  Require at least one number in passwords
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordMinLength" type="number">
+  Minimum password length
+</ParamField>
+
+<ParamField path="userAuthPolicy.passwordMaxLength" type="number">
+  Maximum password length
+</ParamField>

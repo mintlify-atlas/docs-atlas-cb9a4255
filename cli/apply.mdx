@@ -1,0 +1,258 @@
+---
+title: apply
+description: Deploy your Tailor Platform application to a workspace by applying configuration changes
+---
+
+Deploy your Tailor Platform application to a workspace. This command builds your application, compares it with the deployed state, and applies all necessary changes to services, resources, and schemas.
+
+## Command Syntax
+
+```bash
+tailor-sdk apply [options]
+```
+
+## Options
+
+<ParamField path="--workspace-id" type="string">
+  Workspace ID to deploy to. Can also be set via `TAILOR_PLATFORM_WORKSPACE_ID` environment variable or workspace profile.
+  
+  **Alias:** `-w`
+</ParamField>
+
+<ParamField path="--profile" type="string">
+  Workspace profile name. Profiles store workspace ID and authentication token for easy switching between environments.
+  
+  **Alias:** `-p`
+</ParamField>
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file.
+  
+  **Alias:** `-c`
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompts and apply changes automatically.
+  
+  **Alias:** `-y`
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean" default="false">
+  Run the command without making any changes. Useful for previewing what would be deployed.
+  
+  **Alias:** `-d`
+</ParamField>
+
+<ParamField path="--no-schema-check" type="boolean" default="false">
+  Skip schema diff check against migration snapshots. Not recommended for production deployments.
+</ParamField>
+
+<ParamField path="--no-cache" type="boolean" default="false">
+  Disable bundle caching for this run. Forces a complete rebuild of all function bundles.
+</ParamField>
+
+<ParamField path="--clean-cache" type="boolean" default="false">
+  Clean the bundle cache before building. Useful when experiencing caching issues.
+</ParamField>
+
+### Common Options
+
+The following common options are also available:
+
+- `--env-file` / `-e` - Path to environment file (error if not found)
+- `--env-file-if-exists` - Path to environment file (ignored if not found)
+- `--verbose` - Enable verbose logging (show stack traces on error)
+- `--json` / `-j` - Output as JSON (where applicable)
+
+## Usage Examples
+
+### Basic Deploy
+
+```bash
+tailor-sdk apply --workspace-id ws_1234567890
+```
+
+Deploys to the specified workspace with interactive confirmation.
+
+### Deploy with Profile
+
+```bash
+tailor-sdk apply --profile production
+```
+
+Uses the "production" profile which contains workspace ID and credentials.
+
+### Deploy without Confirmation
+
+```bash
+tailor-sdk apply -w ws_1234567890 --yes
+```
+
+Skips all confirmation prompts. Useful for CI/CD pipelines.
+
+### Dry Run
+
+```bash
+tailor-sdk apply --workspace-id ws_1234567890 --dry-run
+```
+
+Shows what would be deployed without making any actual changes.
+
+### Deploy with Environment Variables
+
+```bash
+tailor-sdk apply --env-file .env --env-file-if-exists .env.production
+```
+
+Loads environment variables from both files before deployment.
+
+### Clean Cache and Deploy
+
+```bash
+tailor-sdk apply --clean-cache -w ws_1234567890
+```
+
+Clears the bundle cache and performs a fresh build before deploying.
+
+## Apply Phases
+
+The `apply` command executes in multiple phases:
+
+### Phase 0: Build
+
+1. Loads configuration from `tailor.config.ts`
+2. Generates user types
+3. Bundles functions (workflows, executors, resolvers)
+4. Caches bundles for faster subsequent builds
+
+### Phase 1: Plan
+
+Compares local configuration with deployed resources:
+- Function registry entries
+- TailorDB services and types
+- Static websites
+- Identity providers
+- Auth services and OAuth2 clients
+- Resolvers and pipelines
+- Applications
+- Executors
+- Workflows
+
+### Phase 1b: Confirm
+
+Prompts for confirmation when:
+- Resource ownership conflicts detected
+- Unmanaged resources found in workspace
+- Important resources will be deleted (types, OAuth2 clients, static websites)
+
+### Phase 2-9: Apply Changes
+
+Applies changes in dependency order:
+
+2. **Create/Update Services** - Services that Application depends on
+3. **Delete Subgraph Resources** - Types, resolvers before Application update
+4. **Create/Update Application** - Main application resource
+5. **Create/Update Dependent Services** - Executors and Workflows
+6. **Delete Dependent Services** - Workflows, Executors, Static Websites
+7. **Delete Application** - Removed applications
+8. **Delete Subgraph Services** - After Application is deleted
+9. **Cleanup** - Delete unused function registry entries
+
+<Note>
+The multi-phase approach ensures resources are created and deleted in the correct order to maintain referential integrity.
+</Note>
+
+## Migration Handling
+
+When migrations are configured via `db.tailordb.migration`, the `apply` command automatically:
+
+1. Detects pending migration scripts that haven't been executed
+2. Applies schema changes in a safe order:
+   - Pre-migration schema changes
+   - Script execution via TestExecScript API
+   - Post-migration schema changes
+3. Updates migration state labels in TailorDB metadata
+
+<Warning>
+Migration scripts are executed automatically during `apply`. Ensure your migration scripts are tested before deploying to production.
+</Warning>
+
+## Schema Check
+
+By default, `apply` performs two verification steps:
+
+### Local Schema Check
+
+Verifies that local schema changes match the migration files. This ensures migrations are properly generated before deployment.
+
+### Remote Schema Check
+
+Verifies that the remote schema matches the expected state based on migration history. This detects schema drift caused by:
+- Manual changes in the console
+- Deployments from other developers
+- Out-of-sync migration state
+
+<Warning>
+If remote schema drift is detected, the apply will fail with an error showing the differences. Use `--no-schema-check` to skip verification (not recommended for production).
+</Warning>
+
+## Bundle Caching
+
+The `apply` command caches function bundles to improve build performance:
+
+- Cache key includes SDK version and lockfile hash
+- Only changed functions are rebuilt
+- Cache persists across runs
+- Use `--no-cache` to disable
+- Use `--clean-cache` to clear and rebuild
+
+## Authentication
+
+Authentication token priority:
+
+1. `TAILOR_PLATFORM_TOKEN` environment variable
+2. `TAILOR_TOKEN` environment variable (deprecated)
+3. Profile specified via `--profile` or `TAILOR_PLATFORM_PROFILE`
+4. Current user from platform config (`~/.config/tailor-platform/config.yaml`)
+
+## Workspace ID Resolution
+
+Workspace ID priority:
+
+1. `--workspace-id` command option
+2. `TAILOR_PLATFORM_WORKSPACE_ID` environment variable
+3. Profile specified via `--profile` or `TAILOR_PLATFORM_PROFILE`
+
+## Output Example
+
+```bash
+$ tailor-sdk apply -w ws_1234567890
+
+Building application...
+✓ Generated user types
+✓ Bundled 3 workflows
+✓ Bundled 5 executors
+
+Planning changes...
+
+Changes to apply:
+  + Create TailorDB type: User
+  + Create Resolver: getUser
+  ~ Update Application: my-app
+
+? Are you sure you want to apply these changes? (y/N) y
+
+Applying changes...
+✓ Created TailorDB type: User
+✓ Created Resolver: getUser
+✓ Updated Application: my-app
+
+✓ Successfully applied changes.
+```
+
+## Related Commands
+
+- [`generate`](/cli/generate) - Generate files from configuration
+- [`remove`](/cli/remove) - Remove application from workspace
+- [`show`](/cli/show) - Show deployed application info
+- [`tailordb migration generate`](/cli/tailordb-migration#generate) - Generate migration files

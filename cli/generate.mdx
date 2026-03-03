@@ -1,0 +1,154 @@
+---
+title: generate
+description: Generate files from your Tailor Platform configuration including types, resolvers, and custom code generators
+---
+
+Generate files from your Tailor Platform configuration. This command processes your `tailor.config.ts` file and runs all configured code generators to produce TypeScript types, resolver scaffolding, and other generated artifacts.
+
+## Command Syntax
+
+```bash
+tailor-sdk generate [options]
+```
+
+## Options
+
+<ParamField path="--config" type="string" default="tailor.config.ts">
+  Path to SDK config file.
+  
+  **Alias:** `-c`
+</ParamField>
+
+<ParamField path="--watch" type="boolean" default="false">
+  Watch for type/resolver changes and regenerate automatically. The watcher monitors your TailorDB types and resolver files, rerunning generation when changes are detected.
+  
+  **Alias:** `-W`
+</ParamField>
+
+### Common Options
+
+The following common options are also available:
+
+- `--env-file` / `-e` - Path to environment file (error if not found)
+- `--env-file-if-exists` - Path to environment file (ignored if not found)
+- `--verbose` - Enable verbose logging (show stack traces on error)
+
+## Usage Examples
+
+### Basic Generation
+
+```bash
+tailor-sdk generate
+```
+
+Runs all configured generators using the default `tailor.config.ts` configuration file.
+
+### Generate with Custom Config
+
+```bash
+tailor-sdk generate --config config/tailor.config.ts
+```
+
+Uses a custom configuration file location.
+
+### Watch Mode
+
+```bash
+tailor-sdk generate --watch
+```
+
+Runs generation continuously, watching for file changes and regenerating automatically.
+
+```bash
+tailor-sdk generate -W
+```
+
+Same as above using the short flag.
+
+### Generate with Environment Variables
+
+```bash
+tailor-sdk generate --env-file .env.local
+```
+
+Loads environment variables from `.env.local` before running generation.
+
+## What Gets Generated
+
+The `generate` command processes your configuration and produces files based on:
+
+### User Types
+
+TypeScript type definitions are automatically generated for:
+- TailorDB types and their fields
+- Resolver input/output types
+- Executor configurations
+- Auth service types
+
+### Code Generators
+
+Custom generators defined in `defineGenerators()` run in phases:
+
+1. **TailorDB Phase** - Generators with `tailordb` dependency
+2. **Resolver Phase** - Generators with `resolver` dependency
+3. **Executor Phase** - Generators with `executor` dependency
+
+Each generator can:
+- Process individual types/resolvers/executors
+- Aggregate results across namespaces
+- Write files to disk
+
+### Plugin Outputs
+
+Plugins can hook into generation lifecycle:
+- `onTailorDBReady` - Runs after TailorDB types are loaded
+- `onResolverReady` - Runs after resolvers are loaded
+- `onExecutorReady` - Runs after executors are loaded
+
+## Generation Pipeline
+
+The generation process follows this order:
+
+1. Load configuration from `tailor.config.ts`
+2. Generate user types for TailorDB, Auth, and other services
+3. Load TailorDB types (including plugin-generated types)
+4. Run TailorDB-only generators and `onTailorDBReady` hooks
+5. Load Resolvers (can import generated files)
+6. Run non-executor generators and `onResolverReady` hooks
+7. Load Executors (can import generated files)
+8. Run executor-dependent generators and `onExecutorReady` hooks
+
+<Note>
+Generated files are written to `.tailor/dist/generated/` by default. Each generator or plugin creates files in its own subdirectory.
+</Note>
+
+## Watch Mode Behavior
+
+When running with `--watch`:
+
+- Monitors configuration file and all service files (TailorDB, Resolver, Executor)
+- Automatically reruns generation when changes are detected
+- Restarts the process to clear module cache when config changes
+- Suppresses errors in watch mode to prevent crashes
+
+<Warning>
+Changes to the configuration file will restart the entire watch process to ensure a clean module cache.
+</Warning>
+
+## Output Example
+
+```bash
+$ tailor-sdk generate
+
+Generation for application: my-app
+
+kysely-type | generate: .tailor/dist/generated/kysely-type/db.ts
+kysely-type | generate: .tailor/dist/generated/kysely-type/index.ts
+
+custom-generator | generate: src/generated/types.ts
+```
+
+## Related Commands
+
+- [`init`](/cli/init) - Initialize a new project
+- [`apply`](/cli/apply) - Deploy application (runs generation automatically)

@@ -1,0 +1,320 @@
+---
+title: createResolver
+description: Create custom GraphQL queries and mutations with type-safe input/output schemas and business logic.
+---
+
+## Overview
+
+The `createResolver` function creates custom GraphQL endpoints with business logic that execute on the Tailor Platform. Resolvers provide type-safe input/output schemas, access to TailorDB via Kysely, and user context for authentication.
+
+## Function Signature
+
+```typescript
+function createResolver<
+  Input extends Record<string, TailorAnyField> | undefined,
+  Output extends TailorAnyField | Record<string, TailorAnyField>
+>(config: {
+  name: string;
+  description?: string;
+  operation: "query" | "mutation";
+  input?: Input;
+  output: Output;
+  body: (context: Context<Input>) => OutputType<Output> | Promise<OutputType<Output>>;
+}): ResolverConfig
+```
+
+## Parameters
+
+<ParamField path="name" type="string" required>
+  Unique resolver name per namespace. Used as the GraphQL field name.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Optional description of the resolver's purpose.
+</ParamField>
+
+<ParamField path="operation" type="'query' | 'mutation'" required>
+  GraphQL operation type:
+  - `"query"` - For read operations (fetching data)
+  - `"mutation"` - For write operations (creating, updating, deleting data)
+</ParamField>
+
+<ParamField path="input" type="Record<string, TailorAnyField>">
+  Input schema defined using `t` object methods. Fields can include validation rules.
+  
+  ```typescript
+  input: {
+    email: t.string().validate(({ value }) => value.includes("@")),
+    age: t.int()
+  }
+  ```
+</ParamField>
+
+<ParamField path="output" type="TailorAnyField | Record<string, TailorAnyField>" required>
+  Output schema defined using `t` object methods. Can be a single field or object of fields.
+  
+  ```typescript
+  // Single field
+  output: t.string()
+  
+  // Object of fields
+  output: t.object({
+    id: t.uuid(),
+    name: t.string()
+  })
+  
+  // Shorthand object (automatically wrapped)
+  output: {
+    id: t.uuid(),
+    name: t.string()
+  }
+  ```
+</ParamField>
+
+<ParamField path="body" type="function" required>
+  Function containing the resolver's business logic. Receives a context object and returns data matching the output schema.
+  
+  **Context Object Structure:**
+  
+  <ResponseField name="input" type="InferFieldsOutput<Input>">
+    Typed input data from the GraphQL request, inferred from the input schema.
+  </ResponseField>
+  
+  <ResponseField name="user" type="TailorUser">
+    User performing the operation.
+    
+    ```typescript
+    interface TailorUser {
+      id: string;              // User ID
+      type: string;            // User type (e.g., "endUser", "machineUser")
+      workspaceId: string;     // Workspace identifier
+      attributes?: Record<string, unknown>;  // Custom user attributes
+      attributeList?: string[];              // List of attribute keys
+    }
+    ```
+  </ResponseField>
+  
+  <ResponseField name="env" type="TailorEnv">
+    Environment variables defined in `tailor.config.ts`.
+  </ResponseField>
+</ParamField>
+
+## Input Validation
+
+Add validation rules to input fields using the `validate` method:
+
+```typescript
+createResolver({
+  name: "createUser",
+  operation: "mutation",
+  input: {
+    email: t.string().validate(
+      ({ value }) => value.includes("@"),
+      [({ value }) => value.length <= 255, "Email must be 255 characters or less"]
+    ),
+    age: t.int().validate(({ value }) => value >= 0 && value <= 150)
+  },
+  body: (context) => {
+    // Input is validated before body executes
+    return { email: context.input.email };
+  },
+  output: t.object({ email: t.string() })
+});
+```
+
+**Validation Function Parameters:**
+
+- `value` - The field value being validated
+- `data` - The entire input object
+- `user` - The user performing the operation
+
+**Validation Formats:**
+
+- Function returning `boolean` (uses default error message)
+- Tuple of `[function, errorMessage]` for custom error messages
+- Multiple validators (pass multiple arguments to `validate`)
+
+## Examples
+
+### Basic Query Resolver
+
+```typescript title="resolvers/add.ts" /home/daytona/workspace/source/example/resolvers/add.ts:8-23
+import { createResolver, t } from "@tailor-platform/sdk";
+
+const validators: [(a: { value: number }) => boolean, string][] = [
+  [({ value }) => value >= 0, "Value must be non-negative"],
+  [({ value }) => value < 10, "Value must be less than 10"],
+];
+
+export default createResolver({
+  name: "add",
+  description: "Addition operation",
+  operation: "query",
+  input: {
+    a: t.int().description("First number to add").validate(...validators),
+    b: t.int().description("Second number to add").validate(...validators),
+  },
+  body: ({ input }) => input.a + input.b,
+  output: t.int().description("Sum of the two input numbers"),
+});
+```
+
+### Query with User Context
+
+```typescript title="resolvers/userInfo.ts" /home/daytona/workspace/source/example/resolvers/userInfo.ts:3-23
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "showUserInfo",
+  description: "Show current user information",
+  operation: "query",
+  body: (context) => {
+    return {
+      id: context.user.id,
+      type: context.user.type,
+      workspaceId: context.user.workspaceId,
+      role: context.user.attributes?.role ?? "MANAGER",
+    };
+  },
+  output: t.object({
+    id: t.string().description("User ID"),
+    type: t.string().description("User type"),
+    workspaceId: t.string().description("Workspace ID"),
+    role: t.enum(["MANAGER", "STAFF"]).description("User role"),
+  }).description("User information"),
+});
+```
+
+### Mutation with Database Access
+
+```typescript title="resolvers/stepChain.ts" /home/daytona/workspace/source/example/resolvers/stepChain.ts:5-58
+import { createResolver, t } from "@tailor-platform/sdk";
+import { format } from "date-fns";
+import { getDB } from "../generated/tailordb";
+
+export default createResolver({
+  name: "stepChain",
+  description: "Step chain operation with nested validation",
+  operation: "query",
+  input: {
+    user: t.object({
+      name: t.object({
+        first: t.string()
+          .description("User's first name")
+          .validate([
+            ({ value }) => value.length >= 2,
+            "First name must be at least 2 characters",
+          ]),
+        last: t.string()
+          .description("User's last name")
+          .validate([
+            ({ value }) => value.length >= 2,
+            "Last name must be at least 2 characters",
+          ]),
+      }).description("User's full name"),
+      activatedAt: t.datetime({ optional: true }).description("User activation timestamp"),
+    })
+    .typeName("StepChainUser")
+    .description("User information"),
+  },
+  output: t.object({
+    result: t.object({
+      summary: t.string({ array: true }).description("Summary of processing steps"),
+    }).description("Processing result"),
+  }).description("Result of step chain operation"),
+  body: async (context) => {
+    const step1 = `step1: Hello ${context.input.user.name.first} ${context.input.user.name.last} on step1!`;
+    const step2 = `step2: recorded ${format(new Date(), "yyyy-MM-dd HH:mm:ss")} on step2!`;
+
+    const db = getDB("tailordb");
+    const kyselyResult = await db.selectFrom("Supplier").select(["state"]).execute();
+    const kyselyStep = kyselyResult.map((r) => r.state).join(", ");
+
+    return {
+      result: {
+        summary: [step1, step2, kyselyStep],
+      },
+    };
+  },
+});
+```
+
+### Triggering Workflows from Resolvers
+
+```typescript title="resolvers/triggerWorkflow.ts" /home/daytona/workspace/source/example/resolvers/triggerWorkflow.ts:5-32
+import { createResolver, t } from "@tailor-platform/sdk";
+import { auth } from "../tailor.config";
+import orderProcessingWorkflow from "../workflows/order-processing";
+
+export default createResolver({
+  name: "triggerOrderProcessing",
+  description: "Trigger the order processing workflow",
+  operation: "mutation",
+  input: {
+    orderId: t.string().description("Order ID to process"),
+    customerId: t.string().description("Customer ID for the order"),
+  },
+  body: async ({ input }) => {
+    // Trigger the workflow with authInvoker
+    const workflowRunId = await orderProcessingWorkflow.trigger(
+      {
+        orderId: input.orderId,
+        customerId: input.customerId,
+      },
+      { authInvoker: auth.invoker("manager-machine-user") },
+    );
+
+    return {
+      workflowRunId,
+      message: `Workflow triggered for order ${input.orderId}`,
+    };
+  },
+  output: t.object({
+    workflowRunId: t.string(),
+    message: t.string(),
+  }),
+});
+```
+
+## Definition Rules
+
+<Warning>
+  - **One resolver per file**: Each file must contain exactly one resolver definition
+  - **Export method**: Must use `export default`
+  - **Uniqueness**: Resolver names must be unique per namespace
+</Warning>
+
+## Query vs Mutation
+
+Use `operation: "query"` for read operations and `operation: "mutation"` for write operations:
+
+```typescript
+// Query - for reading data
+createResolver({
+  name: "getUsers",
+  operation: "query",
+  // ...
+});
+
+// Mutation - for creating, updating, or deleting data
+createResolver({
+  name: "createUser",
+  operation: "mutation",
+  // ...
+});
+```
+
+## Comparison with Pipeline Resolver
+
+The SDK's Resolver is a simplified version of Tailor Platform's [Pipeline Resolver](https://docs.tailor.tech/guides/pipeline):
+
+| Pipeline Resolver | SDK Resolver |
+| --- | --- |
+| Multiple steps with different operations | Single `body` function |
+| Declarative step configuration | Imperative TypeScript code |
+| Built-in TailorDB/GraphQL steps | Direct database access via Kysely |
+| CEL expressions for data transformation | Native TypeScript transformations |
+
+<Note>
+  SDK Resolvers provide more flexibility with native TypeScript code, while Pipeline Resolvers offer declarative configuration for common patterns.
+</Note>

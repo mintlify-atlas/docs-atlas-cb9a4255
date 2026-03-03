@@ -1,0 +1,301 @@
+---
+title: Configuration
+description: Learn how tailor.config.ts works and how to configure your Tailor Platform application
+---
+
+The SDK uses `tailor.config.ts` as the central configuration file for your Tailor Platform application. This TypeScript-based configuration provides type safety and IntelliSense support while defining your application structure.
+
+## Basic Structure
+
+Use `defineConfig()` to create your application configuration:
+
+```typescript tailor.config.ts
+import { defineConfig } from "@tailor-platform/sdk";
+
+export default defineConfig({
+  name: "my-app",
+  cors: ["https://example.com"],
+  allowedIpAddresses: ["192.168.1.0/24"],
+  disableIntrospection: false,
+});
+```
+
+### Application Settings
+
+<ParamField path="name" type="string" required>
+  The application name. Must be unique within your workspace.
+</ParamField>
+
+<ParamField path="cors" type="string[]">
+  CORS allowed origins. Can include static website URL references like `website.url`.
+</ParamField>
+
+<ParamField path="allowedIpAddresses" type="string[]">
+  IP addresses allowed to access the application in CIDR format.
+</ParamField>
+
+<ParamField path="disableIntrospection" type="boolean" default="false">
+  Disable GraphQL introspection. Useful for production environments.
+</ParamField>
+
+## Service Configuration
+
+Services are configured using glob patterns to load files automatically:
+
+```typescript tailor.config.ts
+export default defineConfig({
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+      ignores: ["./tailordb/*.draft.ts"],
+    },
+    analyticsdb: { 
+      files: ["./analyticsdb/*.ts"] 
+    },
+  },
+  resolver: {
+    "my-resolver": {
+      files: ["./resolvers/*.ts"],
+    },
+  },
+  executor: { 
+    files: ["./executors/*.ts"] 
+  },
+  workflow: {
+    files: ["./workflows/**/*.ts"],
+  },
+});
+```
+
+### File Patterns
+
+<ParamField path="files" type="string[]" required>
+  Glob patterns to match service files. Supports standard glob syntax like `**/*.ts`.
+</ParamField>
+
+<ParamField path="ignores" type="string[]">
+  Glob patterns to exclude files. By default, `**/*.test.ts` and `**/*.spec.ts` are automatically ignored.
+  
+  <Note>
+    If you explicitly specify `ignores`, the default patterns will not be applied. Use `ignores: []` to include test files.
+  </Note>
+</ParamField>
+
+## Environment Variables
+
+Define environment variables that are accessible in resolvers, executors, and workflows:
+
+```typescript tailor.config.ts
+export default defineConfig({
+  name: "my-app",
+  env: {
+    foo: 1,
+    bar: "hello",
+    baz: true,
+  },
+});
+```
+
+Access environment variables in your code:
+
+<CodeGroup>
+
+```typescript resolvers/env.ts
+import { createResolver, t } from "@tailor-platform/sdk";
+
+export default createResolver({
+  name: "env",
+  description: "Test environment variables",
+  operation: "query",
+  input: {
+    multiplier: t.int().description("Number to multiply with env.foo"),
+  },
+  body: ({ input, env }) => {
+    return {
+      result: input.multiplier * env.foo,
+      envBar: env.bar,
+      envBaz: env.baz,
+    };
+  },
+  output: t.object({
+    result: t.int().description("Result of multiplication"),
+    envBar: t.string().description("Value of env.bar"),
+    envBaz: t.bool().description("Value of env.baz"),
+  }),
+});
+```
+
+```typescript executors/example.ts
+import { createExecutor, recordCreatedTrigger } from "@tailor-platform/sdk";
+import { user } from "../tailordb/user";
+
+export default createExecutor({
+  name: "user-created",
+  trigger: recordCreatedTrigger({ type: user }),
+  operation: {
+    kind: "function",
+    body: ({ newRecord, env }) => {
+      console.log(`Environment: ${env.bar}, User: ${newRecord.name}`);
+    },
+  },
+});
+```
+
+```typescript workflows/example.ts
+import { createWorkflow, createWorkflowJob } from "@tailor-platform/sdk";
+
+export const mainJob = createWorkflowJob({
+  name: "main-job",
+  body: (input, { env }) => {
+    console.log(`Environment: ${env.bar}`);
+    return { value: env.foo };
+  },
+});
+
+export default createWorkflow({
+  name: "example-workflow",
+  mainJob,
+});
+```
+
+</CodeGroup>
+
+## Auth & IdP Configuration
+
+Configure authentication and identity provider services:
+
+```typescript tailor.config.ts
+import {
+  defineConfig,
+  defineAuth,
+  defineIdp,
+} from "@tailor-platform/sdk";
+import { user } from "./tailordb/user";
+
+const idp = defineIdp("my-idp", {
+  authorization: "loggedIn",
+  clients: ["default-idp-client"],
+  userAuthPolicy: {
+    useNonEmailIdentifier: false,
+    allowSelfPasswordReset: true,
+    passwordRequireUppercase: true,
+    passwordRequireLowercase: true,
+    passwordRequireNonAlphanumeric: true,
+    passwordRequireNumeric: true,
+    passwordMinLength: 8,
+    passwordMaxLength: 128,
+  },
+});
+
+const auth = defineAuth("my-auth", {
+  userProfile: {
+    type: user,
+    usernameField: "email",
+    attributes: {
+      role: true,
+    },
+  },
+  machineUsers: {
+    "manager-machine-user": {
+      attributes: {
+        role: "MANAGER",
+      },
+    },
+  },
+  oauth2Clients: {
+    sample: {
+      redirectURIs: ["https://example.com/callback"],
+      description: "Sample OAuth2 client",
+      grantTypes: ["authorization_code", "refresh_token"],
+    },
+  },
+  idProvider: idp.provider("sample", "default-idp-client"),
+});
+
+export default defineConfig({
+  idp: [idp],
+  auth,
+});
+```
+
+## Static Websites
+
+Configure static website hosting and reference URLs dynamically:
+
+```typescript tailor.config.ts
+import { defineConfig, defineStaticWebSite } from "@tailor-platform/sdk";
+
+const website = defineStaticWebSite("my-frontend", {
+  description: "my frontend application",
+});
+
+const erdSite = defineStaticWebSite("my-erd-site", {
+  description: "ERD site for TailorDB",
+});
+
+export default defineConfig({
+  name: "my-app",
+  cors: [
+    website.url, // Resolved at deployment time
+  ],
+  db: {
+    tailordb: {
+      files: ["./tailordb/*.ts"],
+      erdSite: erdSite.name,
+    },
+  },
+  staticWebsites: [website, erdSite],
+});
+```
+
+<Note>
+  The `website.url` property is resolved at deployment time and can be used in CORS settings and OAuth2 redirect URIs.
+</Note>
+
+## External Resources
+
+Reference resources managed by Terraform or other SDK projects:
+
+```typescript tailor.config.ts
+export default defineConfig({
+  name: "my-app",
+  db: {
+    "shared-db": { external: true },
+  },
+  resolver: {
+    "my-resolver": { external: true },
+  },
+  auth: { name: "shared-auth", external: true },
+  idp: [{ name: "shared-idp", external: true }],
+});
+```
+
+<Warning>
+  External resources must already exist and be managed by another project. They are not deployed by this project but can be used for shared access across multiple applications.
+</Warning>
+
+## Config File Location
+
+By default, the SDK looks for `tailor.config.ts` in the project root. You can specify a different path:
+
+```bash
+tailor-sdk apply --config ./config/custom.config.ts
+```
+
+Or set via environment variable:
+
+```bash
+export TAILOR_PLATFORM_SDK_CONFIG_PATH=./config/custom.config.ts
+tailor-sdk apply
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Type Safety" icon="shield-check" href="/concepts/type-safety">
+    Learn how TypeScript types flow through the system
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/concepts/deployment">
+    Understand the apply/remove workflow
+  </Card>
+</CardGroup>
