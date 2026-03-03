@@ -1,0 +1,194 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Tailor Platform SDK",
+  "projectDescription": "TypeScript SDK for building type-safe backend applications on the Tailor Platform",
+  "theme": "palm",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#2563EB",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/configuration",
+              "concepts/type-safety",
+              "concepts/deployment"
+            ]
+          },
+          {
+            "group": "Services",
+            "pages": [
+              "services/tailordb",
+              "services/resolver",
+              "services/executor",
+              "services/workflow",
+              "services/auth",
+              "services/idp",
+              "services/static-website",
+              "services/secret-manager"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/testing",
+              "guides/generators",
+              "guides/plugins",
+              "guides/migrations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cli/overview",
+              "cli/authentication"
+            ]
+          },
+          {
+            "group": "Application Commands",
+            "pages": [
+              "cli/init",
+              "cli/generate",
+              "cli/apply",
+              "cli/remove",
+              "cli/show"
+            ]
+          },
+          {
+            "group": "TailorDB Commands",
+            "pages": [
+              "cli/tailordb-truncate",
+              "cli/tailordb-migration",
+              "cli/tailordb-erd"
+            ]
+          },
+          {
+            "group": "Service Management",
+            "pages": [
+              "cli/executor",
+              "cli/workflow",
+              "cli/secret",
+              "cli/static-website",
+              "cli/user"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Configuration API",
+            "pages": [
+              "api/define-config",
+              "api/define-auth",
+              "api/define-idp",
+              "api/define-static-website",
+              "api/define-generators",
+              "api/define-plugins"
+            ]
+          },
+          {
+            "group": "Database API",
+            "pages": [
+              "api/db-type",
+              "api/db-fields",
+              "api/db-relations",
+              "api/db-permissions"
+            ]
+          },
+          {
+            "group": "Service Creation",
+            "pages": [
+              "api/create-resolver",
+              "api/create-executor",
+              "api/create-workflow"
+            ]
+          },
+          {
+            "group": "Type System",
+            "pages": [
+              "api/type-builders",
+              "api/type-inference"
+            ]
+          },
+          {
+            "group": "Triggers",
+            "pages": [
+              "api/record-triggers",
+              "api/schedule-trigger",
+              "api/webhook-trigger",
+              "api/resolver-trigger"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe database schema definition with TailorDB",
+    "Custom GraphQL resolvers with TypeScript",
+    "Event-driven executors for automation",
+    "Durable workflow orchestration",
+    "Built-in authentication and authorization",
+    "CLI for deployment and management",
+    "Code generation with plugins",
+    "Testing utilities for unit and E2E tests"
+  ],
+  "publicApiSurface": [
+    "defineConfig",
+    "defineAuth",
+    "defineIdp",
+    "defineStaticWebSite",
+    "defineGenerators",
+    "definePlugins",
+    "db.type",
+    "db.string",
+    "db.int",
+    "db.float",
+    "db.bool",
+    "db.date",
+    "db.datetime",
+    "db.uuid",
+    "db.enum",
+    "db.object",
+    "db.relation",
+    "db.fields.timestamps",
+    "db.fields.systemManagedFields",
+    "createResolver",
+    "createExecutor",
+    "createWorkflow",
+    "createWorkflowJob",
+    "recordCreatedTrigger",
+    "recordUpdatedTrigger",
+    "recordDeletedTrigger",
+    "scheduleTrigger",
+    "incomingWebhookTrigger",
+    "resolverExecutedTrigger",
+    "t.string",
+    "t.int",
+    "t.float",
+    "t.bool",
+    "t.object",
+    "t.array",
+    "t.enum",
+    "getDB"
+  ]
+}
