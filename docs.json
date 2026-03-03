@@ -96,9 +96,19 @@
             "pages": [
               "cli/executor",
               "cli/workflow",
+              "cli/function",
               "cli/secret",
               "cli/static-website",
               "cli/user"
+            ]
+          },
+          {
+            "group": "Resource Management",
+            "pages": [
+              "cli/workspace",
+              "cli/profile",
+              "cli/machineuser",
+              "cli/oauth2client"
             ]
           }
         ]

@@ -1,0 +1,111 @@
+---
+title: Function Commands
+description: Manage function executions and view logs
+---
+
+Commands for managing function executions and viewing execution logs.
+
+## function
+
+Manage functions
+
+**Usage**
+
+```bash
+tailor-sdk function [command]
+```
+
+**Commands**
+
+| Command | Description |
+| ------- | ----------- |
+| `function logs` | List or get function execution logs |
+
+When no subcommand is provided, defaults to `logs`.
+
+## function logs
+
+List or get function execution logs.
+
+**Usage**
+
+```bash
+tailor-sdk function logs [options] [executionId]
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `executionId` | Execution ID (if provided, shows details with logs) | No |
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+
+**Examples**
+
+List all function executions:
+
+```bash
+tailor-sdk function logs
+```
+
+Get details for a specific execution:
+
+```bash
+tailor-sdk function logs <execution-id>
+```
+
+Get execution details as JSON:
+
+```bash
+tailor-sdk function logs <execution-id> --json
+```
+
+**Output**
+
+When listing executions (no execution ID):
+
+```json
+[
+  {
+    "id": "exec-123",
+    "scriptName": "myFunction",
+    "status": "SUCCESS",
+    "type": "STANDARD",
+    "startedAt": "2024-03-01T10:00:00Z",
+    "finishedAt": "2024-03-01T10:00:05Z"
+  }
+]
+```
+
+When getting execution details (with execution ID), the output includes:
+
+- **id**: Execution ID
+- **scriptName**: Name of the function that was executed
+- **status**: Execution status (SUCCESS, FAILED, RUNNING, etc.)
+- **type**: Execution type (STANDARD, JOB)
+- **startedAt**: When the execution started
+- **finishedAt**: When the execution finished
+- **logs**: Complete execution logs
+- **result**: Execution result (if available)
+
+**Execution Types**
+
+- **STANDARD**: Regular function execution
+- **JOB**: Function executed as a job
+- **UNSPECIFIED**: Type not specified
+
+**Execution Statuses**
+
+Function executions can have different statuses depending on their current state:
+
+- **PENDING**: Execution is queued
+- **RUNNING**: Execution is in progress
+- **SUCCESS**: Execution completed successfully
+- **FAILED**: Execution failed with an error

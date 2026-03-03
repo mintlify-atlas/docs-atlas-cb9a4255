@@ -1,0 +1,226 @@
+---
+title: Profile Commands
+description: Manage workspace profiles for quick context switching
+---
+
+Commands for managing workspace profiles.
+
+Profiles are named combinations of a user and workspace ID that allow you to quickly switch between different development contexts.
+
+## profile
+
+Manage workspace profiles (user + workspace combinations).
+
+**Usage**
+
+```bash
+tailor-sdk profile [command]
+```
+
+**Commands**
+
+| Command | Description |
+| ------- | ----------- |
+| `profile list` | List all profiles |
+| `profile create` | Create a new profile |
+| `profile update` | Update profile properties |
+| `profile delete` | Delete a profile |
+
+When no subcommand is provided, defaults to `list`.
+
+## What are Profiles?
+
+Profiles store a combination of:
+- **User**: The authenticated user email
+- **Workspace ID**: The workspace to operate in
+
+Instead of specifying `--workspace-id` on every command, you can use `--profile <name>` to reference a saved profile.
+
+**Example Workflow**
+
+```bash
+# Create profiles for different environments
+tailor-sdk profile create dev -u dev@example.com -w workspace-dev-id
+tailor-sdk profile create prod -u prod@example.com -w workspace-prod-id
+
+# Use profiles in commands
+tailor-sdk apply --profile dev
+tailor-sdk workspace get --profile prod
+```
+
+## profile list
+
+List all profiles.
+
+**Usage**
+
+```bash
+tailor-sdk profile list [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+
+**Example**
+
+```bash
+tailor-sdk profile list
+```
+
+**Output**
+
+```json
+[
+  {
+    "name": "dev",
+    "user": "dev@example.com",
+    "workspaceId": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  {
+    "name": "prod",
+    "user": "prod@example.com",
+    "workspaceId": "660e8400-e29b-41d4-a716-446655440001"
+  }
+]
+```
+
+## profile create
+
+Create a new profile.
+
+**Usage**
+
+```bash
+tailor-sdk profile create [options] <name>
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `name` | Profile name | Yes |
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--user <USER>` | `-u` | User email | Yes | - |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | Yes | - |
+
+**Example**
+
+```bash
+tailor-sdk profile create dev -u dev@example.com -w 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Output**
+
+```
+Profile "dev" created successfully.
+
+{
+  "name": "dev",
+  "user": "dev@example.com",
+  "workspaceId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+<Note>
+The user must be authenticated (logged in) before creating a profile. The workspace must also exist and be accessible to the user.
+</Note>
+
+## profile update
+
+Update profile properties.
+
+**Usage**
+
+```bash
+tailor-sdk profile update [options] <name>
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `name` | Profile name | Yes |
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--user <USER>` | `-u` | New user email | No | - |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | New workspace ID | No | - |
+
+**Examples**
+
+Update user:
+
+```bash
+tailor-sdk profile update dev -u newuser@example.com
+```
+
+Update workspace:
+
+```bash
+tailor-sdk profile update dev -w new-workspace-id
+```
+
+Update both:
+
+```bash
+tailor-sdk profile update dev -u newuser@example.com -w new-workspace-id
+```
+
+**Output**
+
+```
+Profile "dev" updated successfully
+
+{
+  "name": "dev",
+  "user": "newuser@example.com",
+  "workspaceId": "new-workspace-id"
+}
+```
+
+<Note>
+At least one property (user or workspace ID) must be provided when updating a profile.
+</Note>
+
+## profile delete
+
+Delete a profile.
+
+**Usage**
+
+```bash
+tailor-sdk profile delete [options] <name>
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `name` | Profile name | Yes |
+
+**Example**
+
+```bash
+tailor-sdk profile delete dev
+```
+
+**Output**
+
+```
+Profile "dev" deleted successfully.
+```
+
+<Note>
+Deleting a profile only removes the profile configuration. It does not delete the workspace or affect the user account.
+</Note>

@@ -1,0 +1,126 @@
+---
+title: Machine User Commands
+description: Manage machine users and authentication tokens
+---
+
+Commands for managing machine users in your Tailor Platform application.
+
+Machine users are service accounts that can authenticate to your application using client credentials. They are useful for server-to-server authentication and automated processes.
+
+## machineuser
+
+Manage machine users in your Tailor Platform application.
+
+**Usage**
+
+```bash
+tailor-sdk machineuser [command]
+```
+
+**Commands**
+
+| Command | Description |
+| ------- | ----------- |
+| `machineuser list` | List all machine users in the application |
+| `machineuser token` | Get an access token for a machine user |
+
+When no subcommand is provided, defaults to `list`.
+
+<Note>
+Machine user commands require your application to have an auth configuration defined with `defineAuth()` in your `tailor.config.ts`.
+</Note>
+
+## machineuser list
+
+List all machine users in the application.
+
+**Usage**
+
+```bash
+tailor-sdk machineuser list [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+| `--config <CONFIG>` | `-c` | Path to config file | No | - |
+
+**Example**
+
+```bash
+tailor-sdk machineuser list
+```
+
+**Output**
+
+```json
+[
+  {
+    "name": "api-service",
+    "clientId": "client_abc123",
+    "clientSecret": "secret_xyz789",
+    "createdAt": "2024-03-01T10:00:00Z",
+    "updatedAt": "2024-03-01T10:00:00Z",
+    "attributes": {}
+  }
+]
+```
+
+## machineuser token
+
+Get an access token for a machine user.
+
+**Usage**
+
+```bash
+tailor-sdk machineuser token [options] <name>
+```
+
+**Arguments**
+
+| Argument | Description | Required |
+| -------- | ----------- | -------- |
+| `name` | Machine user name | Yes |
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+| `--config <CONFIG>` | `-c` | Path to config file | No | - |
+
+**Example**
+
+```bash
+tailor-sdk machineuser token api-service
+```
+
+**Output**
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_at": "2024-03-01T11:00:00Z"
+}
+```
+
+The access token can be used to authenticate API requests to your Tailor Platform application.
+
+**Using the Token**
+
+Include the access token in the Authorization header:
+
+```bash
+curl -H "Authorization: Bearer <access_token>" https://your-app.example.com/api
+```
+
+<Note>
+Access tokens are temporary and expire after a certain period. Use the `expires_at` field to determine when you need to request a new token.
+</Note>

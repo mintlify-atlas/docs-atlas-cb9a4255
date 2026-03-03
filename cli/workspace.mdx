@@ -1,0 +1,251 @@
+---
+title: Workspace Commands
+description: Manage Tailor Platform workspaces and workspace users
+---
+
+Commands for managing Tailor Platform workspaces.
+
+Workspaces are isolated environments where you deploy and run your Tailor Platform applications.
+
+## workspace
+
+Manage Tailor Platform workspaces.
+
+**Usage**
+
+```bash
+tailor-sdk workspace [command]
+```
+
+**Commands**
+
+| Command | Description |
+| ------- | ----------- |
+| `workspace list` | List all Tailor Platform workspaces |
+| `workspace get` | Show detailed information about a workspace |
+| `workspace create` | Create a new Tailor Platform workspace |
+| `workspace delete` | Delete a Tailor Platform workspace |
+| `workspace restore` | Restore a deleted workspace |
+| `workspace app` | Manage workspace applications |
+| `workspace user` | Manage workspace users |
+
+When no subcommand is provided, defaults to `list`.
+
+## workspace list
+
+List all Tailor Platform workspaces.
+
+**Usage**
+
+```bash
+tailor-sdk workspace list [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--limit <LIMIT>` | `-l` | Maximum number of workspaces to list | No | - |
+
+**Examples**
+
+List all workspaces:
+
+```bash
+tailor-sdk workspace list
+```
+
+Limit the number of workspaces:
+
+```bash
+tailor-sdk workspace list --limit 10
+```
+
+**Output**
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "my-workspace",
+    "region": "us-west",
+    "createdAt": "2024-03-01T10:00:00Z",
+    "updatedAt": "2024-03-01T10:00:00Z"
+  }
+]
+```
+
+## workspace get
+
+Show detailed information about a workspace.
+
+**Usage**
+
+```bash
+tailor-sdk workspace get [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | No | - |
+| `--profile <PROFILE>` | `-p` | Workspace profile | No | - |
+
+**Example**
+
+```bash
+tailor-sdk workspace get -w 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Output**
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "my-workspace",
+  "region": "us-west",
+  "deleteProtection": false,
+  "organizationId": "org-123",
+  "folderId": "folder-456",
+  "createdAt": "2024-03-01T10:00:00Z",
+  "updatedAt": "2024-03-01T10:00:00Z"
+}
+```
+
+## workspace create
+
+Create a new Tailor Platform workspace.
+
+**Usage**
+
+```bash
+tailor-sdk workspace create [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--json` | `-j` | Output as JSON | No | `false` |
+| `--name <NAME>` | `-n` | Workspace name | Yes | - |
+| `--region <REGION>` | `-r` | Workspace region (us-west, asia-northeast) | Yes | - |
+| `--delete-protection` | `-d` | Enable delete protection | No | `false` |
+| `--organization-id <ID>` | `-o` | Organization ID to workspace associate with | No | - |
+| `--folder-id <ID>` | `-f` | Folder ID to workspace associate with | No | - |
+| `--profile-name <NAME>` | `-p` | Profile name to create | No | - |
+| `--profile-user <USER>` | | User email for the profile (defaults to current user) | No | - |
+
+**Examples**
+
+Create a basic workspace:
+
+```bash
+tailor-sdk workspace create -n my-workspace -r us-west
+```
+
+Create with delete protection:
+
+```bash
+tailor-sdk workspace create -n my-workspace -r us-west -d
+```
+
+Create and associate with profile:
+
+```bash
+tailor-sdk workspace create -n my-workspace -r us-west --profile-name dev
+```
+
+**Output**
+
+```
+Workspace "my-workspace" created successfully.
+
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "my-workspace",
+  "region": "us-west",
+  "createdAt": "2024-03-01T10:00:00Z",
+  "updatedAt": "2024-03-01T10:00:00Z"
+}
+```
+
+**Workspace Naming Rules**
+
+- Must be 3-63 characters long
+- Can only contain lowercase letters, numbers, and hyphens
+- Cannot start or end with a hyphen
+
+**Available Regions**
+
+- **us-west**: US West region
+- **asia-northeast**: Asia Northeast region
+
+<Note>
+Use `--profile-name` to automatically create a profile for the new workspace, making it easier to reference in future commands.
+</Note>
+
+## workspace delete
+
+Delete a Tailor Platform workspace.
+
+**Usage**
+
+```bash
+tailor-sdk workspace delete [options]
+```
+
+**Options**
+
+| Option | Alias | Description | Required | Default |
+| ------ | ----- | ----------- | -------- | ------- |
+| `--workspace-id <WORKSPACE_ID>` | `-w` | Workspace ID | Yes | - |
+| `--yes` | `-y` | Skip confirmation prompt | No | `false` |
+
+**Example**
+
+```bash
+tailor-sdk workspace delete -w 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Confirmation Prompt**
+
+Unless `--yes` is specified, you will be prompted to enter the workspace name to confirm deletion:
+
+```
+Enter the workspace name to confirm deletion (my-workspace):
+```
+
+**Output**
+
+```
+Workspace "550e8400-e29b-41d4-a716-446655440000" deleted successfully.
+```
+
+If profiles are associated with the workspace:
+
+```
+Workspace "550e8400-e29b-41d4-a716-446655440000" and 2 associated profile(s) deleted successfully.
+```
+
+<Note>
+**Important**
+
+Deleting a workspace:
+- Permanently removes the workspace and all its data
+- Cannot be undone (unless you use `workspace restore` within the retention period)
+- Automatically removes any profiles associated with the workspace
+- Can be prevented by enabling delete protection (`--delete-protection` on create)
+</Note>
+
+## Additional Commands
+
+The workspace command also includes subcommands for managing workspace applications and users:
+
+- `workspace app` - Manage workspace applications
+- `workspace user` - Manage workspace users
+- `workspace restore` - Restore a deleted workspace
+
+Refer to the individual command documentation for more details.
